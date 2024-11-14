@@ -85,10 +85,10 @@ def get_base_model(config):
     embedding_dim = config.training_settings['embedding_dim']
     filter_size = config.training_settings['filter_size']
     num_filters = config.training_settings['num_filters']
+    hidden_dim = config.training_settings['hidden_dim']
+    num_layers = config.training_settings['num_layers']
     num_labels = config.dataset_info[config.dataset_name]['num_labels']
-    hidden_dim = config.dataset_info[config.dataset_name]['hidden_dim']
-    num_layers = config.dataset_info[config.dataset_name]['num_layers']
-    base_model_name = config.classifier_model
+    base_model_name = config.classifier_model_name
     base_model = None
 
     if base_model_name == 'TextCNN':

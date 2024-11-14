@@ -78,7 +78,7 @@ class CustomTrainer:
         self.train_dataloader = train_dataloader
         self.eval_dataloader = eval_dataloader
         self.compute_metrics = compute_metrics
-        self.output_dir = training_args['output_dir']
+        self.output_dir = training_args['out_dir']
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
         self.optimizer = AdamW(self.classifier_model.parameters(), lr=training_args['learning_rate'])
@@ -104,7 +104,7 @@ class CustomTrainer:
 
                 self.optimizer.zero_grad()
                 outputs = self.classifier_model(x)
-                loss = self.loss_fn(outputs.logits, y)
+                loss = self.loss_fn(outputs, y)
                 total_loss += loss.item()
                 loss.backward()
 

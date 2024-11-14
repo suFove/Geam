@@ -310,8 +310,3 @@ class ClassifierBERT(torch.nn.Module):
         x_pred = self.fc(pooled_output)
 
         return x_pred
-
-
-
-
-
