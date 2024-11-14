@@ -1,10 +1,10 @@
-from trains.models import TextCNN
-
+import torch
 
 class Config(object):
     def __init__(self):
         self.bert_path = '../BERT/ZY-BERT'
-
+        self.classifier_model_name = 'TextCNN'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.training_settings = {
             'batch_size': 16,
             'learning_rate': 2e-5,
@@ -17,8 +17,9 @@ class Config(object):
             # rnn
             'hidden_dim': 100,
             'num_layers': 2,
+            'early_stopping_patience': 5,
+            'out_dir': f'../result/{self.classifier_model_name}/'
         }
-        self.classifier_model_name = 'TextCNN'
 
 
 

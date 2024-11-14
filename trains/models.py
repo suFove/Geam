@@ -196,19 +196,8 @@ class TextGraphFusionModule(nn.Module):
 
         cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))  # batch不变，后2维交换
 
-        # # a1=[b, c, 1], a2=[b,c,1]
-        # cross = torch.matmul(a1, a2.transpose(1, 2))
-        # # cross = [b,c1, c2], 其中c1是a1的特征， c2是a2的特征
-        #
-        # # 自己特征a1 与 融合特征cross, 原始特征f1进行矩阵乘法
-        # a1 = torch.matmul(F.softmax(cross, dim=-1), f1)
-        # # a2注意交换 与a1的位置
-        # a2 = torch.matmul(F.softmax(cross.transpose(1, 2), dim=-1), f2)
-
         tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
         gf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=1), gf_c_att)
-        # tf_cross_weighted = text_feature * cross_att.sum(dim=-1).unsqueeze(-1)
-        # gf_cross_weighted = graph_feature * cross_att.sum(dim=1).unsqueeze(1)
 
         # Step 3: 空间注意力, [b, c, s, e] -> [b, c, s, e]
         tf_s_att = self.spatial_attention(tf_cross_weighted, c)
@@ -321,3 +310,8 @@ class ClassifierBERT(torch.nn.Module):
         x_pred = self.fc(pooled_output)
 
         return x_pred
+
+
+
+
+

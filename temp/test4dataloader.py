@@ -8,7 +8,7 @@ from datasets import load_dataset
 
 from config.config import Config
 from utils.berts import EmbeddingDataset
-from utils.common import tokenize_chinese_text, save_dataloader
+from utils.common import tokenize_chinese_text, save_dataloader, create_dataloader
 from utils.util4ge import word_to_idx, idx_to_tensor
 
 # 假设Config是一个包含路径、训练设置等的配置类
