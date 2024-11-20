@@ -1,9 +1,8 @@
 from datasets import load_from_disk
 from transformers import BertTokenizer, AutoModelForSequenceClassification, BertModel
 from config.config import Config
-from trains.models import TextGraphFusionModule
 from utils.berts import compute_metrics, CustomTrainer
-from utils.common import create_dataloader, get_base_model
+from utils.common import create_dataloader, get_base_model, save_data_loaders
 
 '''
     the data dict should be created by ../pre/make_dataset.py
@@ -21,21 +20,22 @@ def init_components():
                                                                     num_labels=config.dataset_info[config.dataset_name][
                                                                         'num_labels'])
     embedding_layer = BertModel(bert_model.config).embeddings
-    feature_fusion_model = TextGraphFusionModule()
-    feature_fusion_model = None
-    classifier_model = get_base_model(config)
+    classifier_model, feature_fusion_model = get_base_model(config)
     classifier_model = classifier_model if classifier_model is not None else bert_model
-
+    print(classifier_model)
+    print(feature_fusion_model)
     print("Loading dataset from disk")
     dataset_dict = load_from_disk(config.dataset_info[config.dataset_name]['root_path'])
 
     train_loader, dev_loader, test_loader = create_dataloader(dataset_dict,
-                                                              tokenizer,
-                                                              embedding_layer,
                                                               config.training_settings['batch_size'])
+
+    save_data_loaders(train_loader, dev_loader, test_loader, config)
+
     print("Loading finished")
     print(f'Training on {config.device}')
-    trainer = CustomTrainer(classifier_model=classifier_model,
+    trainer = CustomTrainer(embedd_layer=embedding_layer,
+                            classifier_model=classifier_model,
                             training_args=config.training_settings,
                             train_dataloader=train_loader,
                             eval_dataloader=dev_loader,

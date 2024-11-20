@@ -1,4 +1,7 @@
 import numpy as np
+import torch
+from datasets import load_from_disk
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -6,33 +9,59 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score
+from transformers import BertTokenizer, AutoModelForSequenceClassification, BertModel
 
-# 假设 input_x 是形状为 [batch_size, max_len, embedding_dim] 的数组
-input_x = np.random.rand(100, 50, 300)
-label_y = np.random.randint(0, 2, (100, 1))
+from config.config import Config
+from utils.berts import compute_metrics
+from utils.common import create_dataloader, dataloader2flatten
 
-# 展平特征，将输入展平成一个向量，形状为 [batch_size, max_len * embedding_dim]
-input_x_flattened = input_x.reshape(input_x.shape[0], -1)
 
-# 分割训练集和测试集
-X_train, X_test, y_train, y_test = train_test_split(input_x_flattened, label_y, test_size=0.2, random_state=42)
+def init_components():
+    """Initialize"""
+    config = Config()
+    print(f'Current dataset is: {config.dataset_name}')
+    print(f"The category is: {config.dataset_info[config.dataset_name]['num_labels']}")
 
-# 数据预处理（标准化）
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+    tokenizer = BertTokenizer.from_pretrained(config.bert_path)
+    bert_model = AutoModelForSequenceClassification.from_pretrained(config.bert_path,
+                                                                    num_labels=config.dataset_info[config.dataset_name][
+                                                                        'num_labels'])
+    embedding_layer = BertModel(bert_model.config).embeddings
 
-# 定义模型
-models = {
-    'SVM': SVC(probability=True),
-    'KNN': KNeighborsClassifier(),
-    'LR': LogisticRegression(),
-    'NB': GaussianNB(),
-}
+    print("Loading dataset from disk")
+    dataset_dict = load_from_disk(config.dataset_info[config.dataset_name]['root_path'])
 
-# 训练和评估模型
-for name, model in models.items():
-    model.fit(X_train_scaled, y_train.ravel())
-    y_pred = model.predict(X_test_scaled)
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f'{name} Accuracy: {accuracy:.4f}')
+    train_loader, dev_loader, test_loader = create_dataloader(dataset_dict,
+                                                              tokenizer,
+                                                              embedding_layer,
+                                                              config.training_settings['batch_size'])
+    print("Loading finished")
+    print("Loading dataset from disk")
+    train_features, train_labels = dataloader2flatten(train_loader)
+    dev_features, dev_labels = dataloader2flatten(dev_loader)
+    test_features, test_labels = dataloader2flatten(dev_loader)
+
+    return train_features, train_labels, dev_features, dev_labels, test_features, test_labels
+
+
+def run():
+    train_features, train_labels, dev_features, dev_labels, test_features, test_labels = init_components()
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(train_features)
+    X_dev_scaled = scaler.transform(dev_features)
+
+    models = {
+        'SVM': SVC(probability=True),
+        'KNN': KNeighborsClassifier(),
+        'LR': LogisticRegression(),
+        'NB': GaussianNB(),
+    }
+
+    # 训练和评估模型
+    for name, model in models.items():
+        model.fit(X_train_scaled, train_labels.ravel())
+        y_dev_pred = model.predict(X_dev_scaled)
+
+def evaluateML(y_pred, y_true):
+    metrics = compute_metrics(y_pred, y_true)
+    return metrics

@@ -1,50 +1,114 @@
 import json
-
 import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch.optim import AdamW
 from torch.utils.data import Dataset
+from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
 '''
 ============= 编码数据集 ================
 '''
+
+
+# class EmbeddingDataset(Dataset):
+#     def __init__(self, dataset, tokenizer, embedd_layer, isTrain=False):
+#         self.dataset = dataset
+#         self.tokenizer = tokenizer
+#         self.embedd_layer = embedd_layer
+#         self.isTrain = isTrain
+#     def __len__(self):
+#         return len(self.dataset)
+#
+#     def __getitem__(self, idx):
+#         # 获取数据字典
+#         item = self.dataset[idx]
+#         #
+#         input_ids = torch.tensor(item['input_ids'])
+#         token_type_ids = torch.tensor(item['token_type_ids'])
+#         if self.isTrain:
+#             gembeddings = torch.tensor(item['gembeddings'])
+#         label = torch.tensor(item['label']).long()
+#         # 获取嵌入
+#         with torch.no_grad():  # 禁用梯度计算
+#             xembeddings = self.embedd_layer(input_ids=input_ids.unsqueeze(0),
+#                                            token_type_ids=token_type_ids.unsqueeze(0)).squeeze(0)
+#         # 返回Embedding和标签（如果有的话）
+#         return {
+#             'xembeddings': xembeddings,
+#             'gembeddings': gembeddings,
+#             'labels': label
+#         } if self.isTrain else {
+#             'xembeddings': xembeddings,
+#             'labels': label
+#         }
+
+# class EmbeddingDataset(Dataset):
+#     def __init__(self, dataset, tokenizer, embedd_layer, isTrain=False):
+#         self.dataset = dataset
+#         self.tokenizer = tokenizer
+#         self.embedd_layer = embedd_layer
+#         self.isTrain = isTrain
+#         # 预计算嵌入
+#         self.precomputed_data = []
+#
+#         for item in self.dataset:
+#             input_ids = torch.tensor(item['input_ids'])
+#             token_type_ids = torch.tensor(item['token_type_ids'])
+#
+#             with torch.no_grad():  # 禁用梯度计算
+#                 xembeddings = self.embedd_layer(input_ids=input_ids.unsqueeze(0),
+#                                                 token_type_ids=token_type_ids.unsqueeze(0)).squeeze(0)
+#
+#             if self.isTrain:
+#                 gembeddings = torch.tensor(item['gembeddings'])
+#                 self.precomputed_data.append({
+#                     'xembeddings': xembeddings,
+#                     'gembeddings': gembeddings,
+#                     'labels': torch.tensor(item['label']).long()
+#                 })
+#             else:
+#                 self.precomputed_data.append({
+#                     'xembeddings': xembeddings,
+#                     'labels': torch.tensor(item['label']).long()
+#                 })
+#
+#     def __len__(self):
+#         return len(self.dataset)
+#
+#     def __getitem__(self, idx):
+#         # 直接返回预计算的数据
+#         item = self.precomputed_data[idx]
+#         return item
 class EmbeddingDataset(Dataset):
-    def __init__(self, dataset, tokenizer, embedd_layer, isTrain=False):
+    def __init__(self, dataset, isTrain=False):
         self.dataset = dataset
-        self.tokenizer = tokenizer
-        self.embedd_layer = embedd_layer
         self.isTrain = isTrain
+
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        # 获取数据字典
         item = self.dataset[idx]
-        #
         input_ids = torch.tensor(item['input_ids'])
         token_type_ids = torch.tensor(item['token_type_ids'])
+
         if self.isTrain:
-            gembeddings = torch.tensor(item['gembeddings'])
-        label = torch.tensor(item['label']).long()
-        # 获取嵌入
-        with torch.no_grad():  # 禁用梯度计算
-            xembeddings = self.embedd_layer(input_ids=input_ids.unsqueeze(0),
-                                           token_type_ids=token_type_ids.unsqueeze(0)).squeeze(0)
-        # 返回Embedding和标签（如果有的话）
-        return {
-            'xembeddings': xembeddings,
-            'gembeddings': gembeddings,
-            'labels': label
-        } if self.isTrain else {
-            'xembeddings': xembeddings,
-            'labels': label
-        }
+            gembeddings = torch.tensor(item['gembeddings'], dtype=torch.float32)
+            xembeddings = torch.tensor(item['xembeddings'], dtype=torch.float32)
+            label = torch.tensor(item['label']).long()
+
+            return {
+                'input_ids': input_ids,
+                'token_type_ids': token_type_ids,
+                'labels': label,
+                'xembeddings': xembeddings,
+                'gembeddings': gembeddings
+            }
 
 
-def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
+def compute_metrics(predictions, labels):
     predicted_labels = np.argmax(predictions, axis=-1)
 
     # 计算准确率
@@ -62,11 +126,11 @@ def compute_metrics(eval_pred):
 
 
 class CustomTrainer:
-    def __init__(self, classifier_model, training_args, train_dataloader, eval_dataloader, compute_metrics,
+    def __init__(self, embedd_layer, classifier_model, training_args, train_dataloader, eval_dataloader, compute_metrics,
                  feature_fusion_model=None, device='cpu'):
         self.device = torch.device(device)
         self.classifier_model = classifier_model.to(self.device)
-
+        self.embedd_layer = embedd_layer.to(self.device)
         # Decide if using a feature fusion model
         self.fuse_feature = feature_fusion_model is not None
         self.feature_fusion_model = feature_fusion_model
@@ -91,10 +155,18 @@ class CustomTrainer:
         if self.fuse_feature:
             self.feature_fusion_model.train()
         self.classifier_model.train()
+
         best_val_loss = float('inf')
-        total_loss, avg_train_loss, val_metrics, early_stop_counter = 0, 0, 0, 0
+        val_metrics = None
+
         for epoch in range(self.training_args['num_epochs']):
-            for batch in self.train_dataloader:
+
+            total_loss, avg_train_loss, early_stop_counter = 0, 0, 0
+
+            # 使用tqdm包装train_dataloader，以便显示进度条
+            train_dataloader_with_tqdm = tqdm(self.train_dataloader, desc=f"Training Epoch {epoch}", leave=False)
+
+            for batch in train_dataloader_with_tqdm:
                 x = batch['xembeddings'].to(self.device)
                 g = batch['gembeddings'].to(self.device) if 'gembeddings' in batch else None
                 y = batch['labels'].to(self.device)
@@ -105,12 +177,19 @@ class CustomTrainer:
                 self.optimizer.zero_grad()
                 outputs = self.classifier_model(x)
                 loss = self.loss_fn(outputs, y)
-                total_loss += loss.item()
-                loss.backward()
-
                 torch.nn.utils.clip_grad_norm_(self.classifier_model.parameters(), 1.0)
+                loss.backward()
                 self.optimizer.step()
                 self.scheduler.step()
+
+                total_loss += loss.item()
+
+                # 更新进度条，显示当前损失
+                train_dataloader_with_tqdm.set_postfix(
+                    {'loss': f'{total_loss / (train_dataloader_with_tqdm.n + 1):.4f}'})
+
+            avg_train_loss = total_loss / len(self.train_dataloader)
+            print(f"Average Train Loss: {avg_train_loss:.4f}")
 
             # Evaluate the model
             val_metrics, val_loss = self.evaluate(eval_dataloader=self.eval_dataloader)
@@ -151,7 +230,7 @@ class CustomTrainer:
         labels = np.concatenate(labels, axis=0)
 
         avg_val_loss = total_loss / len(eval_dataloader)
-        metrics = self.compute_metrics((predictions, labels))
+        metrics = self.compute_metrics(predictions, labels)
 
         return metrics, avg_val_loss
 

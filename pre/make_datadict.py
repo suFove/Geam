@@ -1,5 +1,7 @@
 import os
 
+from gensim.models import word2vec, KeyedVectors
+
 from trains.models import GraphEmbeddingTrainer
 
 '''
@@ -9,10 +11,18 @@ import numpy as np
 import pandas as pd
 import torch
 from transformers import AlbertTokenizerFast, BertModel, BertTokenizer
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from config.config import Config
-from utils.common import tokenize_chinese_text, save_dataloader, create_dataloader
+from utils.common import tokenize_chinese_text, save_dataloader, create_dataloader, save_data_loaders, load_dataloaders, \
+    train_word_vectors
 from utils.util4ge import word_to_idx, idx_to_tensor
+import shutil
+import os
+
+# 指定一个较小的缓存目录
+cache_dir = "D:\\download\\cache"
+# 创建缓存目录（如果不存在）
+os.makedirs(cache_dir, exist_ok=True)
 
 
 def init_components():
@@ -40,20 +50,22 @@ def init_components():
     return config, tokenizer, embedd_layer, word_idx_dict, idx_tensor_dict
 
 
+def pad_or_truncate(np_tensor, max_seq_len):
+    length = np_tensor.shape[0]
+    if length < max_seq_len:
+        padded_tensor = np.zeros((max_seq_len, np_tensor.shape[1]), dtype=np.float32)
+        padded_tensor[:length] = np_tensor
+    else:
+        padded_tensor = np_tensor[:max_seq_len].astype(np.float32)
+    return padded_tensor
+
+
 class EmbeddingHandler:
     def __init__(self, config, word_idx_dict, idx_tensor_dict):
         self.config = config
         self.word_idx_dict = word_idx_dict
         self.idx_tensor_dict = idx_tensor_dict
 
-    def pad_or_truncate(self, np_tensor, max_seq_len):
-        length = np_tensor.shape[0]
-        if length < max_seq_len:
-            padded_tensor = np.zeros((max_seq_len, np_tensor.shape[1]), dtype=np.float32)
-            padded_tensor[:length] = np_tensor
-        else:
-            padded_tensor = np_tensor[:max_seq_len].astype(np.float32)
-        return padded_tensor
 
     def get_tensor_from_token(self, token):
         idx = self.word_idx_dict.get(token)
@@ -70,7 +82,7 @@ class EmbeddingHandler:
 
         if len(buf_tensors) > 0:
             np_tensor = np.stack(buf_tensors, axis=0)
-            np_tensor = self.pad_or_truncate(np_tensor, self.config.training_settings['max_seq_len'])
+            np_tensor = pad_or_truncate(np_tensor, self.config.training_settings['max_seq_len'])
         else:
             np_tensor = np.zeros((self.config.training_settings['max_seq_len'],
                                   self.config.training_settings['embedding_dim']), dtype=np.float32)
@@ -79,54 +91,118 @@ class EmbeddingHandler:
 
 class MakeDataDict(object):
     def __init__(self, config, tokenizer, embedd_layer, word_idx_dict, idx_tensor_dict):
-        self.config, self.tokenizer, self.embedd_layer, self.word_idx_dict, self.idx_tensor_dict = config, tokenizer, embedd_layer, word_idx_dict, idx_tensor_dict
+        self.config = config
+        self.tokenizer = tokenizer
+        self.word2vec_model = None
+        self.embedd_layer = embedd_layer
+        self.word_idx_dict = word_idx_dict
+        self.idx_tensor_dict = idx_tensor_dict
         self.embedding_handler = EmbeddingHandler(self.config, self.word_idx_dict, self.idx_tensor_dict)
 
-    # 编码函数，格式化数据集
     def preprocess_function(self, examples):
         return self.tokenizer(examples['text'], truncation=True, padding='max_length',
-                              max_length=self.config.training_settings['max_seq_len'], )
+                              max_length=self.config.training_settings['max_seq_len'])
 
-    # 编码函数，格式化数据集，添加 graph embed field
     def tokenizer_function(self, examples):
         tokenized_texts = [tokenize_chinese_text(text) for text in examples['text']]
-        # 生成 gembeddings
         gembeddings = [self.embedding_handler.map_text_to_tensors(tokens) for tokens in tokenized_texts]
         return {'tokenized_text': tokenized_texts, 'gembeddings': gembeddings}
 
-    # 获取数据集
+    def get_word_embeddings(self, texts, max_len=256):
+        """
+        为给定文本列表中的每个单词计算词嵌入，并返回句子级别的嵌入。
+
+        参数:
+            texts (list of str): 文本列表，其中每个元素是一个包含空格分隔的单词字符串。
+
+        返回:
+            embeddings (torch.Tensor): 对应于每个文本中每个单词的嵌入表示。
+        """
+        embeddings_list = []
+        for text in texts:
+            words = text.split()
+            sentence_embeddings = []
+            for word in words:
+                if word in self.word2vec_model.key_to_index:
+                    sentence_embeddings.append(self.word2vec_model[word])
+
+            # 如果句子中有任何有效单词，则填充或截断，否则返回一个零向量。
+            if len(sentence_embeddings) > 0:
+                padded_embedding = pad_or_truncate(np.stack(sentence_embeddings, axis=0), max_len)
+                embeddings_list.append(padded_embedding)
+            else:
+                zero_vector = np.zeros((max_len, self.word2vec_model.vector_size))
+                embeddings_list.append(zero_vector)
+
+        return torch.from_numpy(np.stack(embeddings_list, axis=0))
+
     def get_dataloader(self):
-        data_files = {"train": self.config.dataset_info[self.config.dataset_name]['train_path'],
-                      "dev": self.config.dataset_info[self.config.dataset_name]['dev_path'],
-                      "test": self.config.dataset_info[self.config.dataset_name]['test_path']}
+        data_files = {
+            "train": self.config.dataset_info[self.config.dataset_name]['train_path'],
+            "dev": self.config.dataset_info[self.config.dataset_name]['dev_path'],
+            "test": self.config.dataset_info[self.config.dataset_name]['test_path']
+        }
         dataset = load_dataset("csv", data_files=data_files)
-        # print('original data', dataset)
-        # 预处理数据, 编码
+
+        # 预处理数据，生成 input_ids, token_type_ids 和 attention_mask
         encoded_dataset = dataset.map(self.preprocess_function, batched=True)
-        # print('tokenized_dataset:', encoded_dataset)
-        # 添加graph field
+
+        # 添加 graph field 和 xembeddings
+        for split in ['train', 'dev', 'test']:
+            if split == 'train':
+                encoded_dataset[split] = encoded_dataset[split].map(
+                    lambda examples: self.tokenizer_function(examples),
+                    batched=True,
+                )
+                shutil.rmtree(cache_dir)
+                os.makedirs(cache_dir, exist_ok=True)  # 确保清理后重新创建缓存目录
+        # train vec model
+        self.word2vec_model = train_word_vectors(encoded_dataset['train']['tokenized_text'], self.config.word2vec_settings)
+
         encoded_dataset['train'] = encoded_dataset['train'].map(
-            lambda examples: self.tokenizer_function(examples),
-            batched=True,
+            lambda examples: {"xembeddings": self.get_word_embeddings(examples['text'], self.config.training_settings['max_seq_len'])},
+            batched=True
         )
-        # print('encoded_dataset', encoded_dataset)
         return encoded_dataset
 
 
 '''
     note: the batch size may be changed
 '''
+
+
 def run_make_datadict():
     config, tokenizer, embedd_layer, word_idx_dict, idx_tensor_dict = init_components()
+
     dd = MakeDataDict(config, tokenizer, embedd_layer, word_idx_dict, idx_tensor_dict)
     data_dict = dd.get_dataloader()
     print(data_dict)
     data_dict.save_to_disk(config.dataset_info[config.dataset_name]['root_path'])
     print("data dict saved.")
 
+    # train_loader, dev_loader, test_loader = create_dataloader(data_dict,
+    #                                                           config.training_settings['batch_size'])
+    # save_data_loaders(train_loader, dev_loader, test_loader, config)
+    # print("data loaders saved.")
+
+
+def check4dataloaders():
+    config = Config()
+    dataset_dict = load_from_disk(config.dataset_info[config.dataset_name]['root_path'])
+    print(dataset_dict)
+    train_loader, dev_loader, test_loader = create_dataloader(dataset_dict,
+                                                              config.training_settings['batch_size'])
+
+    for data in train_loader:
+        print(data['input_ids'].shape)
+        print(data['token_type_ids'].shape)
+        print(data['gembeddings'].shape)
+        print(data['xembeddings'].shape)
+        print(data['xembeddings'])
+        break
+
 
 # 主程序入口
 if __name__ == '__main__':
     run_make_datadict()
-
-
+    # check4dataloaders()

@@ -1,30 +1,15 @@
 import torch
 
+
 class Config(object):
     def __init__(self):
         self.bert_path = '../BERT/ZY-BERT'
+        # 如果classificer是None，则默认使用bert模型
         self.classifier_model_name = 'TextCNN'
+        # 如果fusion是None，则默认不适用融合模型
+        self.fusion_model_name = None
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.training_settings = {
-            'batch_size': 16,
-            'learning_rate': 2e-5,
-            'num_epochs': 15,
-            'max_seq_len': 256,
-            'embedding_dim': 1024,
-            # cnn
-            'num_filters' : 100,
-            'filter_size': [3,4,5],
-            # rnn
-            'hidden_dim': 100,
-            'num_layers': 2,
-            'early_stopping_patience': 5,
-            'out_dir': f'../result/{self.classifier_model_name}/'
-        }
-
-
-
         self.dataset_name = 'TCM_SD'
-        self.result_dir = '../results/SD_Bert/'
 
         self.dataset_info = {
             'BBCNews': {
@@ -57,4 +42,30 @@ class Config(object):
             'gamma': 0.5,
             'beta': 0.5,
             'learning_rate': 0.01
+        }
+
+        self.training_settings = {
+            'batch_size': 64,
+            'learning_rate': 2e-5,
+            'num_epochs': 15,
+            'max_seq_len': 256,
+            'embedding_dim': 1024,
+            # cnn
+            'num_filters': 100,
+            'filter_size': [3, 4, 5],
+            # rnn
+            'hidden_dim': 100,
+            'num_layers': 2,
+            'early_stopping_patience': 5,
+            'out_dir': f'../result/{self.dataset_name}/{self.classifier_model_name}/'
+        }
+
+        self.word2vec_settings = {
+            'word2vec_path': f"../word_vectors/{self.dataset_name}_{self.training_settings['embedding_dim']}.bin",
+            'vector_size': self.training_settings['embedding_dim'],
+            'min_freq': 5,
+            'window_size': 5,
+            'min_count': 5,
+            'vector_epochs': 50,
+            'num_workers': 4
         }
