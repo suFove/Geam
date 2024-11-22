@@ -258,13 +258,21 @@ class TextCNN(nn.Module):
     def __init__(self, embed_dim, num_labels, num_filters, filter_sizes):
         super(TextCNN, self).__init__()
         # Construct convolutional layers
+        # self.convs = nn.ModuleList([
+        #     nn.Conv2d(1, num_filters, (fs, embed_dim), bias=True)  # Keep float32 type
+        #     for fs in filter_sizes
+        # ])
         self.convs = nn.ModuleList([
-            nn.Conv2d(1, num_filters, (fs, embed_dim), bias=True)  # Keep float32 type
-            for fs in filter_sizes
+            nn.Sequential(
+                nn.Conv2d(1, num_filters, (fs, embed_dim), bias=False),
+                nn.BatchNorm2d(num_filters),
+                nn.ReLU()
+            ) for fs in filter_sizes
         ])
         self.fc = nn.Linear(num_filters * len(filter_sizes), num_labels)
 
     def forward(self, x):
+
         x = x.unsqueeze(1)  # Add a dimension and make sure the input is float32
         # Convolution operation followed by ReLU and max pooling
         x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
@@ -274,6 +282,23 @@ class TextCNN(nn.Module):
         pred_x = self.fc(x)
         return pred_x
 
+
+class BiGRU_Attention(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers):
+        super(BiGRU_Attention, self).__init__()
+        self.bigru = nn.GRU(input_size, hidden_size, num_layers, bidirectional=True, batch_first=True)
+        self.fc = nn.Linear(hidden_size * 2, output_size)
+        self.attention = nn.Linear(hidden_size * 2, 1)
+
+    def forward(self, x):
+        output, _ = self.bigru(x)
+
+        attention_weights = torch.softmax(self.attention(output), dim=1)
+        context_vector = torch.sum(output * attention_weights, dim=1)
+
+        output = self.fc(context_vector)
+
+        return output
 
 class BiGRU(nn.Module):
     def __init__(self, embed_dim, num_labels, hidden_dim, num_layers=1, dropout=0.5):

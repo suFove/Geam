@@ -2,10 +2,11 @@ import csv
 import json
 import dill
 import jieba
+import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from trains.models import TextCNN, BiGRU, TextGraphFusionModule
-from utils.berts import EmbeddingDataset
+from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention
 from gensim.models import word2vec, Word2Vec
 
 
@@ -32,26 +33,52 @@ def tokenize_chinese_text(text):
     return tokens
 
 
-def split_dataset(input_file, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
-    # 读取原始数据
-    df = pd.read_csv(input_file)
+def split_dataset(input_file, train_ratio=0.8, val_ratio=0.10, test_ratio=0.10):
     # 确保比例和为1
     assert train_ratio + val_ratio + test_ratio == 1, "Ratios must sum to 1"
-    # 随机打乱数据集
-    df_shuffled = df.sample(frac=1).reset_index(drop=True)
-    # 计算每个子集的大小
-    n = len(df_shuffled)
-    train_size = int(n * train_ratio)
-    val_size = int(n * val_ratio)
-    # 切分数据集
-    train_df = df_shuffled.iloc[:train_size]
-    val_df = df_shuffled.iloc[train_size:train_size + val_size]
-    test_df = df_shuffled.iloc[train_size + val_size:]
+
+    # 读取原始数据
+    df = pd.read_csv(input_file)
+
+    # 计算中间分割点的比例
+    intermediate_train_ratio = train_ratio / (train_ratio + val_ratio)
+    intermediate_test_ratio = test_ratio
+
+    # 第一步，将数据集分为训练集+验证集和测试集
+    train_val_df, test_df = train_test_split(df, test_size=intermediate_test_ratio, stratify=df['label'],
+                                             random_state=2024)
+
+    # 第二步，将训练集+验证集进一步划分为训练集和验证集
+    train_df, val_df = train_test_split(train_val_df, test_size=(val_ratio / (train_ratio + val_ratio)),
+                                        stratify=train_val_df['label'], random_state=2024)
+
+    # 获取保存文件的基础路径
     root_path = input_file.replace('data.csv', '')
+
     # 保存到不同的CSV文件中
     train_df.to_csv(f"{root_path}train.csv", index=False)
     val_df.to_csv(f"{root_path}dev.csv", index=False)
     test_df.to_csv(f"{root_path}test.csv", index=False)
+
+
+def doc_to_vec(doc, model_wv, max_seq_len, embedding_dim):
+    buf_tensor = []
+    for word in doc:
+        if word in model_wv:
+            buf_tensor.append(model_wv[word])
+    np_tensor = np.stack(buf_tensor, axis=0)
+    np_tensor = pad_or_truncate(np_tensor, max_seq_len)
+    return np_tensor
+
+
+def pad_or_truncate(np_tensor, max_seq_len):
+    length = np_tensor.shape[0]
+    if length < max_seq_len:
+        padded_tensor = np.zeros((max_seq_len, np_tensor.shape[1]), dtype=np.float32)
+        padded_tensor[:length] = np_tensor
+    else:
+        padded_tensor = np_tensor[:max_seq_len].astype(np.float32)
+    return padded_tensor
 
 
 def train_word_vectors(texts_tokenized, word2vec_config):
@@ -85,17 +112,17 @@ def load_dataloader(file_path):
     return dataloader_saved
 
 
-def create_dataloader(encoded_dataset, batch_size=16):
-    # 创建自定义Dataset
-    train_embedding_dataset = EmbeddingDataset(encoded_dataset['train'], isTrain=True)
-    dev_embedding_dataset = EmbeddingDataset(encoded_dataset['dev'])
-    test_embedding_dataset = EmbeddingDataset(encoded_dataset['test'])
-
-    # 使用DataLoader加载数据
-    train_loader = DataLoader(train_embedding_dataset, batch_size=batch_size, shuffle=True)
-    dev_loader = DataLoader(dev_embedding_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_embedding_dataset, batch_size=batch_size, shuffle=True)
-    return train_loader, dev_loader, test_loader
+# def create_dataloader(encoded_dataset, batch_size=16):
+#     # 创建自定义Dataset
+#     train_embedding_dataset = EmbeddingDataset(encoded_dataset['train'], isTrain=True)
+#     dev_embedding_dataset = EmbeddingDataset(encoded_dataset['dev'])
+#     test_embedding_dataset = EmbeddingDataset(encoded_dataset['test'])
+#
+#     # 使用DataLoader加载数据
+#     train_loader = DataLoader(train_embedding_dataset, batch_size=batch_size, shuffle=True)
+#     dev_loader = DataLoader(dev_embedding_dataset, batch_size=batch_size, shuffle=True)
+#     test_loader = DataLoader(test_embedding_dataset, batch_size=batch_size, shuffle=True)
+#     return train_loader, dev_loader, test_loader
 
 
 def load_dataloaders(config):
@@ -138,7 +165,8 @@ def get_base_model(config):
 
     elif base_model_name == 'BiGRU':
         base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers)
-
+    elif base_model_name == 'BiGRU_Attention':
+        base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers)
     else:
         base_model = None
 
