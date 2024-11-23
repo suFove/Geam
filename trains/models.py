@@ -1,5 +1,5 @@
 from torch import nn
-from transformers import BertModel
+from transformers import BertModel, AutoModelForSequenceClassification, AutoModel
 import torch
 import numpy as np
 import pandas as pd
@@ -323,15 +323,17 @@ class BiGRU(nn.Module):
 
 # 定义一个新的模型实例来处理融合后的特征
 class ClassifierBERT(torch.nn.Module):
-    def __init__(self, bertConfig, num_labels):
+    def __init__(self, config, num_labels):
         super(ClassifierBERT, self).__init__()
-        self.encoder = BertModel(bertConfig)
-        self.fc = torch.nn.Linear(bertConfig.hidden_size, num_labels)  # 假设是二分类任务
+        # 使用AutoModel加载预训练模型，不包含分类层
+        self.bert = AutoModel.from_pretrained(config.bert_path)
+        # 定义一个线性层用于分类
+        self.fc = torch.nn.Linear(self.bert.config.hidden_size, num_labels)
 
-    def forward(self, fused_features, attention_mask):
-        encoder_outputs = self.encoder(fused_features, attention_mask=attention_mask)
-        sequence_output = encoder_outputs[0]
-        pooled_output = sequence_output[:, 0]  # 获取 CLS token 的输出
-        x_pred = self.fc(pooled_output)
+    def forward(self, x):
+        # 假设x是形状为[batch_size, seq_len, embedding_dim]的嵌入表示
+        outputs = self.bert(inputs_embeds=x)
+        pooled_output = outputs.pooler_output  # 获取 CLS token 的输出
+        logits = self.fc(pooled_output)
 
-        return x_pred
+        return logits

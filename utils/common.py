@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention
+from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention, ClassifierBERT
 from gensim.models import word2vec, Word2Vec
 
 
@@ -157,7 +157,7 @@ def get_base_model(config):
     base_model = None
     fusion_model = None
 
-    if fusion_model_name is not None:
+    if fusion_model_name == 'TGFM':
         fusion_model = TextGraphFusionModule()
     if base_model_name == 'TextCNN':
         base_model = TextCNN(embed_dim=embedding_dim, num_labels=num_labels, num_filters=num_filters,
@@ -167,6 +167,8 @@ def get_base_model(config):
         base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers)
     elif base_model_name == 'BiGRU_Attention':
         base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers)
+    elif base_model_name == 'Bert':
+        base_model = ClassifierBERT(config, num_labels=num_labels)
     else:
         base_model = None
 

@@ -72,7 +72,7 @@ class CustomTrainer:
                 early_stop_counter += 1
 
             # print(f"Validation Loss: {val_loss:.4f}")
-            # print(val_metrics)
+            print(val_metrics)
             if early_stop_counter >= self.training_args['early_stopping_patience']:
                 print("\nEarly stopping triggered.")
                 break
