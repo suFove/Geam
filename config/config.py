@@ -3,9 +3,9 @@ import torch
 
 class Config(object):
     def __init__(self):
-        self.bert_path = '../BERT/ZY-BERT'
+        self.bert_path = "../BERT/chinese_roberta_L-2_H-12"
         # 如果classificer是None，则默认使用bert模型
-        self.models_name = ['BiGRU_Attention', 'TextCNN']
+        self.models_name = ['Bert', 'BiGRU_Attention', 'TextCNN']
         self.classifier_model_name = self.models_name[0]
         # 如果fusion是None，则默认不适用融合模型
         self.fusion_model_name = None
@@ -33,22 +33,23 @@ class Config(object):
         }
         self.ge_settings = {
             'window_size': 5,
-            'graph_idx_path': '../mydatasets/graph/herb_graph_idx.csv',
-            'graph_word_path': '../mydatasets/graph/herb_graph_word.csv',
-            'graph_embedding_path': '../mydatasets/graph/herb_graph_embeddings.csv',
-            'attention_path': '../mydatasets/graph/herb_attention.csv',
-            'embedding_dim': 300,
+            'embedding_dim': 128,
             'epoch': 400,
             'num_walks': 4,
             'gamma': 0.5,
             'beta': 0.5,
-            'learning_rate': 0.01
+            'learning_rate': 0.01,
+            'graph_idx_path': f'../mydatasets/graph/herb_graph_idx.csv',
+            'graph_word_path': f'../mydatasets/graph/herb_graph_word.csv',
+            'graph_embedding_path': f'../mydatasets/graph/herb_graph_embeddings.csv',
+            'attention_path': f'../mydatasets/graph/herb_attention.csv',
+
         }
 
         self.training_settings = {
-            'batch_size': 32,
-            'learning_rate': 3e-3,
-            'num_epochs': 20,
+            'batch_size': 8,
+            'learning_rate': 3e-4,
+            'num_epochs': 5,
             'max_seq_len': 256,
             'embedding_dim': self.ge_settings['embedding_dim'],
             # cnn

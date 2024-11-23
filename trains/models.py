@@ -272,7 +272,6 @@ class TextCNN(nn.Module):
         self.fc = nn.Linear(num_filters * len(filter_sizes), num_labels)
 
     def forward(self, x):
-
         x = x.unsqueeze(1)  # Add a dimension and make sure the input is float32
         # Convolution operation followed by ReLU and max pooling
         x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
@@ -300,6 +299,7 @@ class BiGRU_Attention(nn.Module):
 
         return output
 
+
 class BiGRU(nn.Module):
     def __init__(self, embed_dim, num_labels, hidden_dim, num_layers=1, dropout=0.5):
         super(BiGRU, self).__init__()
@@ -321,17 +321,36 @@ class BiGRU(nn.Module):
         return out
 
 
-# 定义一个新的模型实例来处理融合后的特征
+'''
+   ============= BERT模型 =============
+'''
+
+
+class BertForEmbedding(nn.Module):
+    def __init__(self, bert_path):
+        super(BertForEmbedding, self).__init__()
+        self.bert = BertModel.from_pretrained(bert_path)
+
+    def forward(self, input_ids, token_type_ids, attention_mask):
+        outputs = self.bert(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+        last_hidden_states = outputs.last_hidden_state
+        # pooler_output = outputs.pooler_output # 这个会把seq_len维度pooling
+        return last_hidden_states
+
+
 class ClassifierBERT(torch.nn.Module):
-    def __init__(self, bertConfig, num_labels):
+    def __init__(self, bert_path, hidden_size, num_labels):
         super(ClassifierBERT, self).__init__()
-        self.encoder = BertModel(bertConfig)
-        self.fc = torch.nn.Linear(bertConfig.hidden_size, num_labels)  # 假设是二分类任务
+        self.bert_embedding_layer = BertForEmbedding(bert_path)
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=0.1),
+            nn.Linear(hidden_size, num_labels)
+        )
 
-    def forward(self, fused_features, attention_mask):
-        encoder_outputs = self.encoder(fused_features, attention_mask=attention_mask)
-        sequence_output = encoder_outputs[0]
-        pooled_output = sequence_output[:, 0]  # 获取 CLS token 的输出
-        x_pred = self.fc(pooled_output)
-
+    def forward(self, x, extra_feature=None):
+        # Shape: [batch_size, seq_length, embedding_dim]
+        bel_out = self.bert_embedding_layer(**x) # 将字典传入
+        emd_f = bel_out[:, 0, :]  # emd_f Shape: [batch_size, embedding_dim]
+        x_pred = self.classifier(emd_f)
         return x_pred

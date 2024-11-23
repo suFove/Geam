@@ -1,36 +1,13 @@
-import csv
-import json
-import dill
-import jieba
+import os
+
 import numpy as np
 import pandas as pd
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
-from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention
+from config.config import Config
+from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention, GraphEmbeddingTrainer, ClassifierBERT
 from gensim.models import word2vec, Word2Vec
-
-
-def read_json_from_file(file_path):
-    with open(file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return data
-
-
-def read_csv_to_lists(fname):
-    texts = []
-    labels = []
-    with open(fname, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            labels.append(int(row['label']))
-            texts.append(row['text'])
-    return texts, labels
-
-
-def tokenize_chinese_text(text):
-    # 使用jieba进行中文分词
-    tokens = jieba.lcut(text)
-    return tokens
+from utils.util4ge import word_to_idx, idx_to_tensor
 
 
 def split_dataset(input_file, train_ratio=0.8, val_ratio=0.10, test_ratio=0.10):
@@ -101,50 +78,30 @@ def load_word_vectors(path_to_load):
     return word_vectors
 
 
-def save_dataloader(file_path, encoded_dataloader):
-    with open(file_path, 'wb') as f:
-        dill.dump(encoded_dataloader, f)
+def init_components():
+    config = Config()
+    # 加载Tokenizer和Model
+    # 名称文件
+    df_graph_word = pd.read_csv(config.ge_settings['graph_word_path'])
+    # 下标文件
+    df_graph_idx = pd.read_csv(config.ge_settings['graph_idx_path'])
+    # ge文件
+    if not os.path.exists(config.ge_settings['graph_embedding_path']):
+        print(f"file {config.ge_settings['graph_embedding_path']} is not exists, create it by AttentionWalk now...")
+        ge_trainer = GraphEmbeddingTrainer(config.ge_settings, True)
+        ge_trainer.fit()
+        ge_trainer.save_model()
+    df_graph_idx2tensor = pd.read_csv(config.ge_settings['graph_embedding_path'])
 
+    #  转化映射关系
+    word_idx_dict = word_to_idx(df_graph_word, df_graph_idx)
+    idx_tensor_dict = idx_to_tensor(df_graph_idx2tensor)
 
-def load_dataloader(file_path):
-    with open(file_path, 'rb') as f:
-        dataloader_saved = dill.load(f)
-    return dataloader_saved
-
-
-# def create_dataloader(encoded_dataset, batch_size=16):
-#     # 创建自定义Dataset
-#     train_embedding_dataset = EmbeddingDataset(encoded_dataset['train'], isTrain=True)
-#     dev_embedding_dataset = EmbeddingDataset(encoded_dataset['dev'])
-#     test_embedding_dataset = EmbeddingDataset(encoded_dataset['test'])
-#
-#     # 使用DataLoader加载数据
-#     train_loader = DataLoader(train_embedding_dataset, batch_size=batch_size, shuffle=True)
-#     dev_loader = DataLoader(dev_embedding_dataset, batch_size=batch_size, shuffle=True)
-#     test_loader = DataLoader(test_embedding_dataset, batch_size=batch_size, shuffle=True)
-#     return train_loader, dev_loader, test_loader
-
-
-def load_dataloaders(config):
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'train.pkl', 'rb') as f:
-        train_loader = dill.load(f)
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'dev.pkl', 'rb') as f:
-        dev_loader = dill.load(f)
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'test.pkl', 'rb') as f:
-        test_loader = dill.load(f)
-    return train_loader, dev_loader, test_loader
-
-
-def save_data_loaders(train_loader, dev_loader, test_loader, config):
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'train.pkl', 'wb') as f:
-        dill.dump(train_loader, f)
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'dev.pkl', 'wb') as f:
-        dill.dump(dev_loader, f)
-    with open(config.dataset_info[config.dataset_name]['root_path'] + 'test.pkl', 'wb') as f:
-        dill.dump(test_loader, f)
+    return config, word_idx_dict, idx_tensor_dict
 
 
 def get_base_model(config):
+    bert_path = config.bert_path
     max_seq_len = config.training_settings['max_seq_len']
     embedding_dim = config.training_settings['embedding_dim']
     filter_size = config.training_settings['filter_size']
@@ -167,20 +124,49 @@ def get_base_model(config):
         base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers)
     elif base_model_name == 'BiGRU_Attention':
         base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers)
+    elif base_model_name == 'Bert':
+        base_model = ClassifierBERT(bert_path, embedding_dim, num_labels)
+
     else:
         base_model = None
 
     return base_model, fusion_model
 
 
-def dataloader2flatten(dataloader):
-    all_features = []
-    all_labels = []
-    for features, labels in dataloader:
-        # 展平特征，形状从 [batch_size, seq_len, embedding_dim] 变为 [batch_size, seq_len * embedding_dim]
-        flattened_features = features.view(features.size(0), -1)
-        all_features.append(flattened_features.numpy())
-        all_labels.extend(labels.numpy())
-    return all_features, all_labels
+# def dataloader2flatten(dataloader):
+#     all_features = []
+#     all_labels = []
+#     for batch in dataloader:
+#         x = batch['x']
+#         y = batch['y']
+#         # 展平特征，形状从 [batch_size, seq_len, embedding_dim] 变为 [batch_size, seq_len * embedding_dim]
+#         flattened_features = x.view(-1, x.shape[-1])
+#         all_features.append(flattened_features.cpu().numpy())
+#         all_labels.extend(y.cpu().numpy())
+#     return all_features, all_labels
+def dataloader2flatten(loader):
+    all_x, all_y = [], []
+    for batch in loader:
+        x = batch['x']
+        y = batch['y']
+        x = x.cpu().numpy()  # 将tensor转换为numpy数组，并确保在CPU上运行
+        y = y.cpu().numpy()
+        all_x.extend(x.reshape(x.shape[0], -1))
+        all_y.extend(y.reshape(y.shape[0], -1))
+    return np.array(all_x), np.array(all_y)
 
-# split_dataset('../mydatasets/BBCNews/data.csv', train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
+def compute_metrics(y_true, y_pred):
+    # 计算准确率
+    acc = accuracy_score(y_true, y_pred)
+
+    # 计算精确率、召回率和F1分数，average='weighted'表示使用加权平均
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro',
+                                                               zero_division=1)
+    return {
+        "accuracy": acc,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
+
+

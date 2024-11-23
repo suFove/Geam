@@ -1,55 +1,25 @@
 import numpy as np
-import torch
-from datasets import load_from_disk
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import accuracy_score
-from transformers import BertTokenizer, AutoModelForSequenceClassification, BertModel
-
-from config.config import Config
-from utils.berts import compute_metrics
-from utils.common import create_dataloader, dataloader2flatten
+from pre.train_vector import load_vec_model
+from trains.dl import init_dl_runner
+from utils.class_hub import EmbeddingHandler
+from utils.common import init_components, dataloader2flatten, get_base_model, compute_metrics
 
 
-def init_components():
-    """Initialize"""
-    config = Config()
+def run_ml():
+    # 1.创造初始化组件
+    config, word_idx_dict, idx_tensor_dict = init_components()
     print(f'Current dataset is: {config.dataset_name}')
     print(f"The category is: {config.dataset_info[config.dataset_name]['num_labels']}")
+    all_df, train_df, dev_df, test_df, word2vec_model = load_vec_model(config)
+    eh = EmbeddingHandler(config, word_idx_dict, idx_tensor_dict)
 
-    tokenizer = BertTokenizer.from_pretrained(config.bert_path)
-    bert_model = AutoModelForSequenceClassification.from_pretrained(config.bert_path,
-                                                                    num_labels=config.dataset_info[config.dataset_name][
-                                                                        'num_labels'])
-    embedding_layer = BertModel(bert_model.config).embeddings
-
-    print("Loading dataset from disk")
-    dataset_dict = load_from_disk(config.dataset_info[config.dataset_name]['root_path'])
-
-    train_loader, dev_loader, test_loader = create_dataloader(dataset_dict,
-                                                              tokenizer,
-                                                              embedding_layer,
-                                                              config.training_settings['batch_size'])
-    print("Loading finished")
-    print("Loading dataset from disk")
-    train_features, train_labels = dataloader2flatten(train_loader)
-    dev_features, dev_labels = dataloader2flatten(dev_loader)
-    test_features, test_labels = dataloader2flatten(dev_loader)
-
-    return train_features, train_labels, dev_features, dev_labels, test_features, test_labels
-
-
-def run():
-    train_features, train_labels, dev_features, dev_labels, test_features, test_labels = init_components()
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(train_features)
-    X_dev_scaled = scaler.transform(dev_features)
-
+    # 2. 创建模型
+    # _, feature_fusion_model = get_base_model(config)  # 忽略dl模型
     models = {
         'SVM': SVC(probability=True),
         'KNN': KNeighborsClassifier(),
@@ -57,11 +27,26 @@ def run():
         'NB': GaussianNB(),
     }
 
-    # 训练和评估模型
-    for name, model in models.items():
-        model.fit(X_train_scaled, train_labels.ravel())
-        y_dev_pred = model.predict(X_dev_scaled)
+    # 3. 创建dataloader
+    train_loader, dev_loader, test_loader = init_dl_runner(config, train_df, dev_df, test_df, word2vec_model, eh)
 
-def evaluateML(y_pred, y_true):
-    metrics = compute_metrics(y_pred, y_true)
-    return metrics
+
+    train_x, train_y = dataloader2flatten(train_loader)
+    dev_x, dev_y = dataloader2flatten(dev_loader)
+    test_x, test_y = dataloader2flatten(dev_loader)
+
+    # 标准化
+    scaler = StandardScaler()
+    train_x = scaler.fit_transform(train_x)
+    dev_x = scaler.transform(dev_x)
+    test_x = scaler.transform(test_x)
+
+    for model_name, model in models.items():
+        model.fit(train_x, np.ravel(train_y))
+        metrics_dev_report = compute_metrics(dev_y, model.predict(dev_x))
+        metrics_test_report = compute_metrics(test_y, model.predict(test_x))
+        print("eval", model_name, metrics_dev_report)
+        print("test", model_name, metrics_test_report)
+
+if __name__ == '__main__':
+    run_ml()
