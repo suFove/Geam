@@ -17,6 +17,8 @@ from utils.common import pad_or_truncate
 '''
     使用word2Vec的数据集
 '''
+
+
 class DeeplDataset(Dataset):
     def __init__(self, x, y=None, g=None, device=torch.device('cpu')):
         self.x = x
@@ -109,21 +111,19 @@ class EmbeddingHandler:
                                   self.config.training_settings['embedding_dim']), dtype=np.float32)
         return np_tensor
 
+
 '''
-    自定义 trainner
+    自定义 trainer
 '''
+
+
 class CustomTrainer:
     def __init__(self, classifier_model, training_args, train_dataloader, eval_dataloader,
-                 compute_metrics, feature_fusion_model=None, device='cpu'):
+                 compute_metrics, device='cpu'):
 
         self.device = torch.device(device)
         self.classifier_model = classifier_model.to(self.device)
         # self.embedd_layer = embedd_layer.to(self.device)
-        # Decide if using a feature fusion model
-        self.fuse_feature = feature_fusion_model is not None
-        self.feature_fusion_model = feature_fusion_model
-        if self.fuse_feature:
-            self.feature_fusion_model = self.feature_fusion_model.to(self.device)
 
         # Training and Evaluation Dataloaders, Metrics etc.
         self.training_args = training_args
@@ -140,43 +140,40 @@ class CustomTrainer:
                                                          num_training_steps=total_steps)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
 
-    def train_model(self, batch_dict, train_bert=True):
-        '''
-            select diff batch dict by different dataloader
-            if train_bert:
-                batch dict should be:
-        '''
-
     def run_epoch(self):
         best_val_loss = float('inf')
-        val_metrics = None
+        best_metrics = None  # 初始化最佳指标
         early_stop_counter = 0
+
         for epoch in range(self.training_args['num_epochs']):
-            # 1.train
+            # 1. 训练模型
             self.run_train(epoch)
 
-            # 2.Evaluate the model
+            # 2. 评估模型
             val_metrics, val_loss = self.run_evaluate(eval_dataloader=self.eval_dataloader)
 
-            # 3.检查早停
+            # 3. 更新最佳验证损失和指标
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                best_metrics = val_metrics.copy()  # 深拷贝当前的指标
                 early_stop_counter = 0
+
+                # 如果需要保存模型，可以在这里添加代码
+                # self.save_model()
+
             else:
                 early_stop_counter += 1
 
-            # print(f"Validation Loss: {val_loss:.4f}")
             print(val_metrics)
+
             if early_stop_counter >= self.training_args['early_stopping_patience']:
                 print("\nEarly stopping triggered.")
                 break
 
-        return val_metrics, best_val_loss
+        return best_metrics, best_val_loss
 
     def run_train(self, epoch):
         # 1. 设置train mode
-        if self.fuse_feature:
-            self.feature_fusion_model.train()
         self.classifier_model.train()
         # 2.准备指标
         total_loss, avg_train_loss = 0, 0
@@ -188,10 +185,7 @@ class CustomTrainer:
             g = batch['g']
             y = batch['y']
             self.optimizer.zero_grad()
-            if self.fuse_feature and g is not None:
-                x = self.feature_fusion_model(x, g)
-
-            outputs = self.classifier_model(x)
+            outputs = self.classifier_model(x, g)
             loss = self.loss_fn(outputs, y)
             torch.nn.utils.clip_grad_norm_(self.classifier_model.parameters(), 1.0)
             loss.backward()

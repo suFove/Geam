@@ -1,14 +1,12 @@
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, BertModel, BertForSequenceClassification
+from transformers import BertTokenizer
 
-from pre.train_vector import load_vec_model
-from trains.models import BertForEmbedding, ClassifierBERT
-from utils.class_hub import CustomTrainer, BertDataset, EmbeddingHandler
-from utils.common import init_components, compute_metrics
+from utils.class_hub import BertDataset, EmbeddingHandler
 
 
-# tokenizer = BertTokenizer.from_pretrained('../BERT/chinese_roberta_L-2_H-12')
-# model = BertModel.from_pretrained("../BERT/chinese_roberta_L-2_H-12")
+
+# tokenizer = BertTokenizer.from_pretrained('../BERT/chinese_roberta_L-2_H-128')
+# model = BertModel.from_pretrained("../BERT/chinese_roberta_L-2_H-128")
 # text = "用你喜欢的任何文本替换我。"
 # encoded_input = tokenizer(text, return_tensors='pt')
 # output = model(**encoded_input)
@@ -55,6 +53,5 @@ def init_bert_components(config, train_df, dev_df, test_df, eh:EmbeddingHandler)
 #     print(f"Best Test Metrics: {test_metrics}")
 #     trainer.save_metrics('test_metrics', test_metrics)
 
-if __name__ == "__main__":
-    run_bert()
+
 

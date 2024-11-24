@@ -30,7 +30,6 @@ def run_ml():
     # 3. 创建dataloader
     train_loader, dev_loader, test_loader = init_dl_runner(config, train_df, dev_df, test_df, word2vec_model, eh)
 
-
     train_x, train_y = dataloader2flatten(train_loader)
     dev_x, dev_y = dataloader2flatten(dev_loader)
     test_x, test_y = dataloader2flatten(dev_loader)
@@ -47,6 +46,7 @@ def run_ml():
         metrics_test_report = compute_metrics(test_y, model.predict(test_x))
         print("eval", model_name, metrics_dev_report)
         print("test", model_name, metrics_test_report)
+
 
 if __name__ == '__main__':
     run_ml()

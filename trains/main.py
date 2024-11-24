@@ -14,14 +14,13 @@ def run():
     eh = EmbeddingHandler(config, word_idx_dict, idx_tensor_dict)
 
     # 2. 创建模型
-    classifier_model, feature_fusion_model = get_base_model(config)
+    classifier_model = get_base_model(config)
     print('classifier_model:', classifier_model)
-    print('feature_fusion_model', feature_fusion_model)
     print("Loading dataset from disk")
 
     # 3. 根据模型类选择数据集加载：采用bert还是word2vec, 二者创建dataloader时，所需dataset类不同，一个返回字典，一个返回tensor
     train_loader, dev_loader, test_loader = None, None, None
-    if config.classifier_model_name == 'Bert':
+    if 'Bert' in config.classifier_model_name:
         train_loader, dev_loader, test_loader = init_bert_components(config, train_df, dev_df, test_df, eh)
     else:
         train_loader, dev_loader, test_loader = init_dl_runner(config, train_df, dev_df, test_df, word2vec_model, eh)
@@ -33,7 +32,6 @@ def run():
                             train_dataloader=train_loader,
                             eval_dataloader=dev_loader,
                             compute_metrics=compute_metrics,
-                            feature_fusion_model=feature_fusion_model,
                             device=config.device)
 
     # 5.评价并保存指标

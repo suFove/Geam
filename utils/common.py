@@ -23,11 +23,11 @@ def split_dataset(input_file, train_ratio=0.8, val_ratio=0.10, test_ratio=0.10):
 
     # 第一步，将数据集分为训练集+验证集和测试集
     train_val_df, test_df = train_test_split(df, test_size=intermediate_test_ratio, stratify=df['label'],
-                                             random_state=2024)
+                                             random_state=2025)
 
     # 第二步，将训练集+验证集进一步划分为训练集和验证集
     train_df, val_df = train_test_split(train_val_df, test_size=(val_ratio / (train_ratio + val_ratio)),
-                                        stratify=train_val_df['label'], random_state=2024)
+                                        stratify=train_val_df['label'], random_state=2025)
 
     # 获取保存文件的基础路径
     root_path = input_file.replace('data.csv', '')
@@ -118,19 +118,19 @@ def get_base_model(config):
         fusion_model = TextGraphFusionModule()
     if base_model_name == 'TextCNN':
         base_model = TextCNN(embed_dim=embedding_dim, num_labels=num_labels, num_filters=num_filters,
-                             filter_sizes=filter_size)
+                             filter_sizes=filter_size, fusion_model=fusion_model)
 
     elif base_model_name == 'BiGRU':
-        base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers)
+        base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers, fusion_model=fusion_model)
     elif base_model_name == 'BiGRU_Attention':
-        base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers)
-    elif base_model_name == 'Bert':
-        base_model = ClassifierBERT(bert_path, embedding_dim, num_labels)
+        base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers, fusion_model=fusion_model)
+    elif 'Bert' in base_model_name:
+        base_model = ClassifierBERT(bert_path, embedding_dim, num_labels, fusion_model=fusion_model)
 
     else:
         base_model = None
 
-    return base_model, fusion_model
+    return base_model
 
 
 # def dataloader2flatten(dataloader):

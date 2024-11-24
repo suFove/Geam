@@ -81,7 +81,7 @@ def run_pre_data():
     json_path = '../mydatasets/TCM_SD/data.json'
     csv_path = '../mydatasets/TCM_SD/data.csv'
 
-    split_dataset(csv_path, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1)
+    split_dataset(csv_path, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
 
 
 if __name__ == '__main__':

@@ -168,6 +168,14 @@ class GraphEmbeddingTrainer(object):
 '''
 
 
+class ConcatModel(nn.Module):
+    def __init__(self):
+        super(ConcatModel, self).__init__()
+
+    def forward(self, text_feature, graph_feature):
+        return torch.cat(text_feature, graph_feature)
+
+
 class TextGraphFusionModule(nn.Module):
     def __init__(self, ):
         super(TextGraphFusionModule, self).__init__()
@@ -255,13 +263,9 @@ class TextGraphFusionModule(nn.Module):
 
 
 class TextCNN(nn.Module):
-    def __init__(self, embed_dim, num_labels, num_filters, filter_sizes):
+    def __init__(self, embed_dim, num_labels, num_filters, filter_sizes, fusion_model=None):
         super(TextCNN, self).__init__()
-        # Construct convolutional layers
-        # self.convs = nn.ModuleList([
-        #     nn.Conv2d(1, num_filters, (fs, embed_dim), bias=True)  # Keep float32 type
-        #     for fs in filter_sizes
-        # ])
+        self.fusion_model = fusion_model
         self.convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(1, num_filters, (fs, embed_dim), bias=False),
@@ -271,7 +275,9 @@ class TextCNN(nn.Module):
         ])
         self.fc = nn.Linear(num_filters * len(filter_sizes), num_labels)
 
-    def forward(self, x):
+    def forward(self, x, g=None):
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_model(x, g)
         x = x.unsqueeze(1)  # Add a dimension and make sure the input is float32
         # Convolution operation followed by ReLU and max pooling
         x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
@@ -283,13 +289,16 @@ class TextCNN(nn.Module):
 
 
 class BiGRU_Attention(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers):
+    def __init__(self, input_size, hidden_size, output_size, num_layers, fusion_model=None):
         super(BiGRU_Attention, self).__init__()
+        self.fusion_model = fusion_model
         self.bigru = nn.GRU(input_size, hidden_size, num_layers, bidirectional=True, batch_first=True)
         self.fc = nn.Linear(hidden_size * 2, output_size)
         self.attention = nn.Linear(hidden_size * 2, 1)
 
-    def forward(self, x):
+    def forward(self, x, g=None):
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_model(x, g)
         output, _ = self.bigru(x)
 
         attention_weights = torch.softmax(self.attention(output), dim=1)
@@ -301,15 +310,18 @@ class BiGRU_Attention(nn.Module):
 
 
 class BiGRU(nn.Module):
-    def __init__(self, embed_dim, num_labels, hidden_dim, num_layers=1, dropout=0.5):
+    def __init__(self, embed_dim, num_labels, hidden_dim, num_layers=1, dropout=0.5, fusion_model=None):
         super(BiGRU, self).__init__()
+        self.fusion_model = fusion_model
         # 双向 GRU 层
         self.bigru = nn.GRU(embed_dim, hidden_dim, num_layers=num_layers, bidirectional=True,
                             dropout=dropout if num_layers > 1 else 0)
         # 全连接层，用于分类
         self.fc = nn.Linear(hidden_dim * 2, num_labels)  # 因为是双向的，所以隐藏状态维度要乘以2
 
-    def forward(self, x):
+    def forward(self, x, g=None):
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_model(x, g)
         # 双向 GRU 层操作
         _, h_n = self.bigru(x)  # h_n 形状是 (num_layers * num_directions, batch_size, hidden_dim)
         # 将前向和后向的隐藏状态拼接在一起，得到最终的上下文表示
@@ -339,18 +351,23 @@ class BertForEmbedding(nn.Module):
 
 
 class ClassifierBERT(torch.nn.Module):
-    def __init__(self, bert_path, hidden_size, num_labels):
+    def __init__(self, bert_path, hidden_size, num_labels, fusion_model=None):
         super(ClassifierBERT, self).__init__()
+        self.fusion_model = fusion_model
         self.bert_embedding_layer = BertForEmbedding(bert_path)
         # Classifier
         self.classifier = nn.Sequential(
+            # nn.Linear(hidden_size, hidden_size),
+            # nn.Tanh(),
             nn.Dropout(p=0.1),
             nn.Linear(hidden_size, num_labels)
         )
 
-    def forward(self, x, extra_feature=None):
+    def forward(self, x, g=None):
         # Shape: [batch_size, seq_length, embedding_dim]
-        bel_out = self.bert_embedding_layer(**x) # 将字典传入
-        emd_f = bel_out[:, 0, :]  # emd_f Shape: [batch_size, embedding_dim]
+        bert_emb = self.bert_embedding_layer(**x)  # 将字典传入
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_layer(bert_emb, g)
+        emd_f = x[:, 0, :]  # emd_f Shape: [batch_size, embedding_dim]
         x_pred = self.classifier(emd_f)
         return x_pred
