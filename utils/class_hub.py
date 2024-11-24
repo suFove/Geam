@@ -1,34 +1,121 @@
 import json
 import os
+
+import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 from torch.optim import AdamW, Adam
+from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
+
+from utils.common import pad_or_truncate
 
 '''
 ============= 编码数据集 ================
 '''
 
+'''
+    使用word2Vec的数据集
+'''
+class DeeplDataset(Dataset):
+    def __init__(self, x, y=None, g=None, device=torch.device('cpu')):
+        self.x = x
+        self.y = y
+        self.device = device
+        if g is not None:
+            self.g = g
+        else:
+            self.g = [0] * len(x)
 
-def compute_metrics(y_true, y_pred):
-    # 计算准确率
-    acc = accuracy_score(y_true, y_pred)
+    def __len__(self):
+        return len(self.x)
 
-    # 计算精确率、召回率和F1分数，average='weighted'表示使用加权平均
-    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro',
-                                                               zero_division=1)
-    return {
-        "accuracy": acc,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-    }
+    def __getitem__(self, idx):
+
+        sample = {
+            'x': torch.tensor(self.x[idx], dtype=torch.float32, device=self.device),
+            'y': torch.tensor(self.y[idx], dtype=torch.long, device=self.device),
+            'g': torch.tensor(self.g[idx], dtype=torch.float32, device=self.device)
+        }
+        return sample
 
 
+'''
+    使用bert模型分类所构建的数据集
+'''
+
+
+class BertDataset(Dataset):
+    def __init__(self, df_data, tokenizer, max_length=256, extra_features=None, device=torch.device('cpu')):
+        self.device = device
+        self.texts = df_data['text'].tolist()
+        self.labels = torch.tensor(np.array(df_data['label'].tolist()), dtype=torch.long, device=self.device)
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        if extra_features is not None:
+            self.extra_features = torch.tensor(np.array(extra_features), dtype=torch.long, device=self.device)
+        else:
+            self.extra_features = torch.zeros(len(self.texts), dtype=torch.long, device=self.device)
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        text = self.texts[idx]
+        label = self.labels[idx]
+        extra_feature = self.extra_features[idx]
+        encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length,
+                                  return_tensors="pt")
+        return {
+            'x': {
+                'input_ids': encoding['input_ids'].squeeze(0).to(self.device),  # Remove the batch dimension
+                'token_type_ids': encoding['token_type_ids'].squeeze(0).to(self.device),
+                'attention_mask': encoding['attention_mask'].squeeze(0).to(self.device)
+            },
+            'g': extra_feature.to(self.device),
+            'y': label
+        }
+
+
+'''
+    用于匹配图嵌入字典， word to feature
+'''
+
+
+class EmbeddingHandler:
+    def __init__(self, config, word_idx_dict, idx_tensor_dict):
+        self.config = config
+        self.word_idx_dict = word_idx_dict
+        self.idx_tensor_dict = idx_tensor_dict
+
+    def get_tensor_from_token(self, token):
+        idx = self.word_idx_dict.get(token)
+        if idx is not None and idx in self.idx_tensor_dict:
+            return self.idx_tensor_dict[idx]
+        return None
+
+    def map_text_to_tensors(self, tokens):
+        buf_tensors = []
+        for token in tokens:
+            tensor_embedded = self.get_tensor_from_token(token)
+            if tensor_embedded is not None:
+                buf_tensors.append(tensor_embedded)
+
+        if len(buf_tensors) > 0:
+            np_tensor = np.stack(buf_tensors, axis=0)
+            np_tensor = pad_or_truncate(np_tensor, self.config.training_settings['max_seq_len'])
+        else:
+            np_tensor = np.zeros((self.config.training_settings['max_seq_len'],
+                                  self.config.training_settings['embedding_dim']), dtype=np.float32)
+        return np_tensor
+
+'''
+    自定义 trainner
+'''
 class CustomTrainer:
     def __init__(self, classifier_model, training_args, train_dataloader, eval_dataloader,
                  compute_metrics, feature_fusion_model=None, device='cpu'):
+
         self.device = torch.device(device)
         self.classifier_model = classifier_model.to(self.device)
         # self.embedd_layer = embedd_layer.to(self.device)
@@ -52,6 +139,13 @@ class CustomTrainer:
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=warmup_steps,
                                                          num_training_steps=total_steps)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
+
+    def train_model(self, batch_dict, train_bert=True):
+        '''
+            select diff batch dict by different dataloader
+            if train_bert:
+                batch dict should be:
+        '''
 
     def run_epoch(self):
         best_val_loss = float('inf')
@@ -90,9 +184,9 @@ class CustomTrainer:
         train_dataloader_with_tqdm = tqdm(self.train_dataloader, desc=f"Training Epoch {epoch}", leave=True)
         # 3.batch loop
         for batch in train_dataloader_with_tqdm:
-            x = batch['x'].to(self.device)
-            g = batch['g'].to(self.device) if 'g' in batch else None
-            y = batch['y'].to(self.device)
+            x = batch['x']
+            g = batch['g']
+            y = batch['y']
             self.optimizer.zero_grad()
             if self.fuse_feature and g is not None:
                 x = self.feature_fusion_model(x, g)
@@ -119,8 +213,8 @@ class CustomTrainer:
             eval_with_tqdm = tqdm(eval_dataloader, desc="Evaluating", leave=True)
 
             for batch in eval_with_tqdm:
-                x = batch['x'].to(self.device)
-                y = batch['y'].to(self.device)
+                x = batch['x']
+                y = batch['y']
 
                 outputs = self.classifier_model(x)
                 loss = self.loss_fn(outputs, y)
