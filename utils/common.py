@@ -5,7 +5,8 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from config.config import Config
-from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention, GraphEmbeddingTrainer, ClassifierBERT
+from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention, GraphEmbeddingTrainer, ClassifierBERT, \
+    AddFusionModel, ConcatFusionModel
 from gensim.models import word2vec, Word2Vec
 from utils.util4ge import word_to_idx, idx_to_tensor
 
@@ -114,8 +115,17 @@ def get_base_model(config):
     base_model = None
     fusion_model = None
 
-    if fusion_model_name is not None:
+    # 特征融合模型选择
+    if fusion_model_name is 'TGFM':
         fusion_model = TextGraphFusionModule()
+    elif fusion_model_name is 'Concat':
+        fusion_model = ConcatFusionModel(embedding_dim)
+    elif fusion_model_name is 'Add':
+        fusion_model = AddFusionModel(embedding_dim)
+    else:
+        fusion_model = None
+
+    # 基础模型选择
     if base_model_name == 'TextCNN':
         base_model = TextCNN(embed_dim=embedding_dim, num_labels=num_labels, num_filters=num_filters,
                              filter_sizes=filter_size, fusion_model=fusion_model)
@@ -133,17 +143,6 @@ def get_base_model(config):
     return base_model
 
 
-# def dataloader2flatten(dataloader):
-#     all_features = []
-#     all_labels = []
-#     for batch in dataloader:
-#         x = batch['x']
-#         y = batch['y']
-#         # 展平特征，形状从 [batch_size, seq_len, embedding_dim] 变为 [batch_size, seq_len * embedding_dim]
-#         flattened_features = x.view(-1, x.shape[-1])
-#         all_features.append(flattened_features.cpu().numpy())
-#         all_labels.extend(y.cpu().numpy())
-#     return all_features, all_labels
 def dataloader2flatten(loader):
     all_x, all_y = [], []
     for batch in loader:

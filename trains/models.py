@@ -168,12 +168,42 @@ class GraphEmbeddingTrainer(object):
 '''
 
 
-class ConcatModel(nn.Module):
-    def __init__(self):
-        super(ConcatModel, self).__init__()
+class ConcatFusionModel(nn.Module):
+    '''
+        直接拼接模型，在seq_len维度上拼接，使用线性层输出
+    '''
 
-    def forward(self, text_feature, graph_feature):
-        return torch.cat(text_feature, graph_feature)
+    def __init__(self, embedding_dim):
+        super(ConcatFusionModel, self).__init__()
+        self.fusion_layer = nn.Sequential(
+            nn.Linear(embedding_dim * 2, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
+
+    def forward(self, x, g):
+        x = torch.cat((x, g), dim=-1)  # [b,s,2e]
+        out = self.fusion_layer(x)
+        return out
+
+
+class AddFusionModel(nn.Module):
+    '''
+        按位相加融合模型
+    '''
+
+    def __init__(self, embedding_dim):
+        super(AddFusionModel, self).__init__()
+        self.fusion_layer = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
+
+    def forward(self, x, g):
+        x = x + g
+        out = self.fusion_layer(x)
+        return out
 
 
 class TextGraphFusionModule(nn.Module):
@@ -201,16 +231,18 @@ class TextGraphFusionModule(nn.Module):
         # channel attention, [b, c, (s*e)] -> [b, c, 1]
         tf_c_att = self.channel_attention(text_features_flattened)
         gf_c_att = self.channel_attention(graph_embeddings_flattened)
-
+        print('tf_c_att', tf_c_att.shape)
         cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))  # batch不变，后2维交换
-
+        print('cross_att:', cross_att.shape)
         tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
-        gf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=1), gf_c_att)
+        gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1,2), dim=-1), gf_c_att)
+        print('tf_s_att', tf_cross_weighted.shape)
+        print('gf_s_att', gf_cross_weighted.shape)
 
         # Step 3: 空间注意力, [b, c, s, e] -> [b, c, s, e]
         tf_s_att = self.spatial_attention(tf_cross_weighted, c)
         gf_s_att = self.spatial_attention(gf_cross_weighted, c)
-
+        print(tf_s_att.shape)
         # step 4: 归一化
         norm_tf = torch.softmax(tf_s_att, dim=2)
         norm_gf = torch.softmax(gf_s_att, dim=2)
@@ -255,6 +287,135 @@ class TextGraphFusionModule(nn.Module):
         concat_f = torch.cat([avg_out, max_out], dim=1)
         att_cat = F.relu(self.spatial_conv(concat_f))
         return att_cat
+
+
+# ==================================
+
+
+class KACAModule(nn.Module):
+    def __init__(self):
+        super(KACAModule, self).__init__()
+
+        # Cross-attention related layers
+        self.avg_conv = nn.Conv2d(1, 1, kernel_size=1, padding=0)
+        self.max_conv = nn.Conv2d(1, 1, kernel_size=1, padding=0)
+        self.spatial_conv = nn.Conv2d(2, 1, kernel_size=7, padding=3)
+
+        # Gated Unit for feature selection
+        self.gated_unit = nn.GRUCell(input_size=256, hidden_size=256)  # Example, adjust as needed
+
+        # Second-order interaction for richer feature representations
+        self.second_order_interaction = nn.Linear(256, 256)
+
+        # ESA (Entity Semantic Alignment)
+        self.esa_module = ESA_Module()
+
+        # SSF (Spatial Semantic Fine-Tuning)
+        self.ssf_module = SSF_Module()
+
+    def forward(self, text_feature, graph_feature):
+        # Step 1: 数据预处理 【batch, channel, seq_len, embedding_dim】，拓展channel维度
+        text_feature = text_feature.unsqueeze(1)
+        graph_feature = graph_feature.unsqueeze(1)
+
+        # Step 2: Cross Attention
+        b, c, s, e = text_feature.shape
+        text_features_flattened = text_feature.view(b, c, -1)
+        graph_embeddings_flattened = graph_feature.view(b, c, -1)
+
+        tf_c_att = self.channel_attention(text_features_flattened)
+        gf_c_att = self.channel_attention(graph_embeddings_flattened)
+        print('tf_c_att', tf_c_att.shape)
+        cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))
+        print('cross_att:', cross_att.shape)
+        tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
+        # gf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=1), gf_c_att)
+        gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1, 2), dim=-1), gf_c_att)
+        # Step 3: Spatial Attention
+        tf_s_att = self.spatial_attention(tf_cross_weighted, c)
+        gf_s_att = self.spatial_attention(gf_cross_weighted, c)
+
+        print('tf_s_att', tf_s_att.shape)
+        print('gf_s_att', gf_s_att.shape)
+        # step 4: 归一化
+        norm_tf = torch.softmax(tf_s_att, dim=2)
+        norm_gf = torch.softmax(gf_s_att, dim=2)
+
+        # Step 4: 特征融合
+        tf_fused = text_feature + norm_tf * text_feature
+        gf_fused = graph_feature + norm_gf * graph_feature
+        tf_fused = tf_fused.view(b, s, e)
+        gf_fused = gf_fused.view(b, s, e)
+        print('tf_fused', tf_fused.shape)
+        # Step 4: Entity Semantic Alignment (ESA)
+        aligned_text_features, aligned_graph_features = self.esa_module(tf_fused, gf_fused)
+
+        # Step 5: Second-order interaction (Quadratic feature interaction)
+        interacted_features = self.second_order_interaction(aligned_text_features * aligned_graph_features)
+
+        # Step 6: Gated Unit for feature selection
+        gated_text_features = self.gated_unit(interacted_features, aligned_text_features)
+        gated_graph_features = self.gated_unit(interacted_features, aligned_graph_features)
+
+        # Step 7: SSF (Spatial Semantic Fine-Tuning)
+        tf_fused = self.ssf_module(gated_text_features)
+        gf_fused = self.ssf_module(gated_graph_features)
+
+        # Final Feature Fusion
+        fused_output = tf_fused + gf_fused
+        return fused_output
+
+    def channel_attention(self, input_features):
+        avg_f = torch.mean(input_features, dim=-1, keepdim=True).unsqueeze(-1)
+        max_f, _ = torch.max(input_features, dim=-1, keepdim=True)
+        max_f = max_f.unsqueeze(-1)
+
+        avg_att = F.relu(self.avg_conv(avg_f)).squeeze(-1)
+        max_att = F.relu(self.max_conv(max_f)).squeeze(-1)
+        att_fusion = avg_att + max_att
+        return att_fusion
+
+    def spatial_attention(self, input_feature, channel_size=1):
+        if channel_size == 1:
+            input_feature = input_feature.repeat(1, 2, 1, 1)
+        avg_out = torch.mean(input_feature, dim=1, keepdim=True)
+        max_out, _ = torch.max(input_feature, dim=1, keepdim=True)
+
+        concat_f = torch.cat([avg_out, max_out], dim=1)
+        att_cat = F.relu(self.spatial_conv(concat_f))
+        return att_cat
+
+
+class ESA_Module(nn.Module):
+    def __init__(self):
+        super(ESA_Module, self).__init__()
+        # ESA相关的层，可以设计为注意力机制
+        self.attn_layer = nn.MultiheadAttention(embed_dim=256, num_heads=1)
+
+    def forward(self, tf, tf_ehc, gf, gf_ehc):
+        # 跨模态的语义对齐
+        tf_att, _ = self.attn_layer(tf, tf_ehc, tf)
+        gf_att, _ = self.attn_layer(gf, gf_ehc, gf)
+        fo = tf_att + gf_att
+        return fo
+
+
+
+
+
+
+
+        # return aligned_features[:, :256, :], aligned_features[:, 256:, :]
+
+
+class SSF_Module(nn.Module):
+    def __init__(self):
+        super(SSF_Module, self).__init__()
+        self.spatial_conv = nn.Conv2d(1, 1, kernel_size=7, padding=3)
+
+    def forward(self, features):
+        # 对特征进行空间语义微调
+        return F.relu(self.spatial_conv(features.unsqueeze(1)))
 
 
 '''
@@ -367,7 +528,8 @@ class ClassifierBERT(torch.nn.Module):
         # Shape: [batch_size, seq_length, embedding_dim]
         bert_emb = self.bert_embedding_layer(**x)  # 将字典传入
         if self.fusion_model is not None and g is not None:
-            x = self.fusion_layer(bert_emb, g)
-        emd_f = x[:, 0, :]  # emd_f Shape: [batch_size, embedding_dim]
+            bert_emb = self.fusion_layer(bert_emb, g)
+        emd_f = bert_emb[:, 0, :]  # emd_f, 即[CLS] Shape: [batch_size, embedding_dim]
+
         x_pred = self.classifier(emd_f)
         return x_pred

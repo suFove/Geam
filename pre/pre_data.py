@@ -60,6 +60,7 @@ def json2csv(srcfname, outfname):
     json_data = []
     with open(srcfname, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
+    print(len(json_data))
     print(json_data[0]['text'])
     print(json_data[0]['label'])
     with open(outfname, 'w', newline='', encoding='utf-8') as f:
@@ -81,7 +82,9 @@ def run_pre_data():
     json_path = '../mydatasets/TCM_SD/data.json'
     csv_path = '../mydatasets/TCM_SD/data.csv'
 
-    split_dataset(csv_path, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
+    # json2csv(json_path, csv_path)
+
+    split_dataset(csv_path, train_ratio=0.8, val_ratio=0.10, test_ratio=0.10)
 
 
 if __name__ == '__main__':

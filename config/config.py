@@ -3,14 +3,20 @@ import torch
 
 class Config(object):
     def __init__(self):
+        # -------------------此处为必须的配置-------------------
         self.bert_path = "../BERT/chinese_roberta_L-8_H-512"
         # 如果classificer是None，则默认使用bert模型
         self.models_name = ['Bert_medium', 'BiGRU_Attention', 'TextCNN']
         self.classifier_model_name = self.models_name[2]
         # 如果fusion是None，则默认不适用融合模型'TGFM'
-        self.fusion_model_name = None
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.methods = ['Concat', 'Add', 'TGFM']
+        self.fusion_model_name = self.methods[0]
         self.dataset_name = 'TCM_SD'
+        # -------------------此处为必须的配置-------------------
+
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
         self.dataset_info = {
             'BBCNews': {
@@ -27,7 +33,7 @@ class Config(object):
                 'train_path': '../mydatasets/TCM_SD/train.csv',
                 'dev_path': '../mydatasets/TCM_SD/dev.csv',
                 'test_path': '../mydatasets/TCM_SD/test.csv',
-                'num_labels': 11
+                'num_labels': 148
             }
 
         }
