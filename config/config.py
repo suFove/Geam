@@ -14,17 +14,15 @@ class Config(object):
         self.dataset_name = 'TCM_SD'
         # -------------------此处为必须的配置-------------------
 
-
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-
         self.dataset_info = {
-            'BBCNews': {
-                'root_path': '../mydatasets/BBCNews/',
-                'data_path': '../mydatasets/BBCNews/data.csv',
-                'train_path': '../mydatasets/BBCNews/train.csv',
-                'dev_path': '../mydatasets/BBCNews/dev.csv',
-                'test_path': '../mydatasets/BBCNews/test.csv',
+            'TCM_CR': {
+                'root_path': '../mydatasets/TCM_CR/',
+                'data_path': '../mydatasets/TCM_CR/data.csv',
+                'train_path': '../mydatasets/TCM_CR/train.csv',
+                'dev_path': '../mydatasets/TCM_CR/dev.csv',
+                'test_path': '../mydatasets/TCM_CR/test.csv',
                 'num_labels': 5
             },
             'TCM_SD': {
@@ -39,7 +37,7 @@ class Config(object):
         }
         self.ge_settings = {
             'window_size': 5,
-            'embedding_dim': 512,
+            'embedding_dim': 1024,
             'epoch': 400,
             'num_walks': 4,
             'gamma': 0.5,
@@ -54,15 +52,15 @@ class Config(object):
 
         self.training_settings = {
             'batch_size': 32,
-            'learning_rate': 3e-5,
+            'learning_rate': 5e-5,
             'num_epochs': 30,
-            'max_seq_len': 256,
+            'max_seq_len': 512,
             'embedding_dim': self.ge_settings['embedding_dim'],
             # cnn
-            'num_filters': 100,
+            'num_filters': 128,
             'filter_size': [3, 4, 5],
             # rnn
-            'hidden_dim': 100,
+            'hidden_dim': 128,
             'num_layers': 2,
 
             'early_stopping_patience': 5,
