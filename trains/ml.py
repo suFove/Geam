@@ -4,6 +4,8 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
+from sklearn.tree import DecisionTreeClassifier
+
 from pre.train_vector import load_vec_model
 from trains.dl import init_dl_runner
 from utils.class_hub import EmbeddingHandler
@@ -19,12 +21,10 @@ def run_ml():
     eh = EmbeddingHandler(config, word_idx_dict, idx_tensor_dict)
 
     # 2. 创建模型
-    # _, feature_fusion_model = get_base_model(config)  # 忽略dl模型
+    _, feature_fusion_model = get_base_model(config)  # 忽略dl模型
     models = {
         'SVM': SVC(probability=True),
-        'KNN': KNeighborsClassifier(),
-        'LR': LogisticRegression(),
-        'NB': GaussianNB(),
+        'DT': DecisionTreeClassifier(),
     }
 
     # 3. 创建dataloader

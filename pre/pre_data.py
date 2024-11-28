@@ -76,11 +76,12 @@ def json2csv(srcfname, outfname):
 
 
 def run_pre_data():
-    train_path = '../mydatasets/TCM_SD/train.txt'
-    dev_path = '../mydatasets/TCM_SDdev.txt'
-    test_path = '../mydatasets/TCM_SD/test.txt'
-    json_path = '../mydatasets/TCM_SD/data.json'
-    csv_path = '../mydatasets/TCM_SD/data.csv'
+    root_path = '../mydatasets/TCM_CR/'
+    train_path = root_path + 'train.txt'
+    dev_path = root_path + 'dev.txt'
+    test_path = root_path + 'test.txt'
+    json_path = root_path + 'data.json'
+    csv_path = root_path + 'data.csv'
 
     # json2csv(json_path, csv_path)
 
