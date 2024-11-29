@@ -9,9 +9,9 @@ class Config(object):
         self.models_name = ['Bert_medium', 'BiGRU_Attention', 'TextCNN']
         self.classifier_model_name = self.models_name[2]
         # 如果fusion是None，则默认不适用融合模型'TGFM'
-        self.methods = ['Concat', 'Add', 'TGFM']
+        self.methods = [None, 'Concat', 'Add', 'TGFM']
         self.fusion_model_name = self.methods[0]
-        self.dataset_name = 'TCM_SD'
+        self.dataset_name = 'TCM_CR'
         # -------------------此处为必须的配置-------------------
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -54,7 +54,7 @@ class Config(object):
             'batch_size': 32,
             'learning_rate': 5e-5,
             'num_epochs': 30,
-            'max_seq_len': 512,
+            'max_seq_len': 256,
             'embedding_dim': self.ge_settings['embedding_dim'],
             # cnn
             'num_filters': 128,

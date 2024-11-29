@@ -116,11 +116,11 @@ def get_base_model(config):
     fusion_model = None
 
     # 特征融合模型选择
-    if fusion_model_name is 'TGFM':
+    if fusion_model_name == 'TGFM':
         fusion_model = TextGraphFusionModule()
-    elif fusion_model_name is 'Concat':
+    elif fusion_model_name == 'Concat':
         fusion_model = ConcatFusionModel(embedding_dim)
-    elif fusion_model_name is 'Add':
+    elif fusion_model_name == 'Add':
         fusion_model = AddFusionModel(embedding_dim)
     else:
         fusion_model = None

@@ -83,7 +83,7 @@ def run_pre_data():
     json_path = root_path + 'data.json'
     csv_path = root_path + 'data.csv'
 
-    # json2csv(json_path, csv_path)
+    json2csv(json_path, csv_path)
 
     split_dataset(csv_path, train_ratio=0.8, val_ratio=0.10, test_ratio=0.10)
 
