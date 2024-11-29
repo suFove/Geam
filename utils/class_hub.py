@@ -47,17 +47,49 @@ class DeeplDataset(Dataset):
 '''
 
 
+# class BertDataset(Dataset):
+#     def __init__(self, df_data, tokenizer, max_length=256, extra_features=None, device=torch.device('cpu')):
+#         self.device = device
+#         self.texts = df_data['text'].tolist()
+#         self.labels = torch.tensor(np.array(df_data['label'].tolist()), dtype=torch.long, device=self.device)
+#         self.tokenizer = tokenizer
+#         self.max_length = max_length
+#         if extra_features is not None:
+#             self.extra_features = torch.tensor(np.array(extra_features), dtype=torch.long, device=self.device)
+#         else:
+#             self.extra_features = torch.zeros(len(self.texts), dtype=torch.long, device=self.device)
+#
+#     def __len__(self):
+#         return len(self.texts)
+#
+#     def __getitem__(self, idx):
+#         text = self.texts[idx]
+#         label = self.labels[idx]
+#         extra_feature = self.extra_features[idx]
+#         encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length,
+#                                   return_tensors="pt")
+#         return {
+#             'x': {
+#                 'input_ids': encoding['input_ids'].squeeze(0).to(self.device),  # Remove the batch dimension
+#                 'token_type_ids': encoding['token_type_ids'].squeeze(0).to(self.device),
+#                 'attention_mask': encoding['attention_mask'].squeeze(0).to(self.device)
+#             },
+#             'g': extra_feature.to(self.device),
+#             'y': label
+#         }
+
 class BertDataset(Dataset):
     def __init__(self, df_data, tokenizer, max_length=256, extra_features=None, device=torch.device('cpu')):
         self.device = device
         self.texts = df_data['text'].tolist()
-        self.labels = torch.tensor(np.array(df_data['label'].tolist()), dtype=torch.long, device=self.device)
+        self.labels = torch.tensor(df_data['label'].tolist(), dtype=torch.long)
         self.tokenizer = tokenizer
         self.max_length = max_length
+
         if extra_features is not None:
-            self.extra_features = torch.tensor(np.array(extra_features), dtype=torch.long, device=self.device)
+            self.extra_features = extra_features
         else:
-            self.extra_features = torch.zeros(len(self.texts), dtype=torch.long, device=self.device)
+            self.extra_features = None
 
     def __len__(self):
         return len(self.texts)
@@ -65,17 +97,36 @@ class BertDataset(Dataset):
     def __getitem__(self, idx):
         text = self.texts[idx]
         label = self.labels[idx]
-        extra_feature = self.extra_features[idx]
+
+        # Tokenize the text, padding and truncating as needed
         encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length,
                                   return_tensors="pt")
+
+        # Check if the tokenization resulted in an unexpected list or type for the length
+        total_len = len(encoding['input_ids'].squeeze(0))  # Get the length of the tokenized input
+        if isinstance(total_len, list):  # Ensure it's an integer, not a list
+            total_len = len(total_len)  # Use the length of the list if needed
+
+        # Now the comparison should work fine
+        if total_len > self.max_length:
+            print(
+                f"Warning: Length of tokens exceeds max_length. Total length: {total_len}, Max length: {self.max_length}")
+
+        # Handle extra features
+        if self.extra_features is not None:
+            extra_feature = self.extra_features[idx]
+            extra_feature_tensor = torch.tensor(extra_feature, dtype=torch.float32).to(self.device)
+        else:
+            extra_feature_tensor = torch.zeros(1, dtype=torch.float32).to(self.device)
+
         return {
             'x': {
-                'input_ids': encoding['input_ids'].squeeze(0).to(self.device),  # Remove the batch dimension
+                'input_ids': encoding['input_ids'].squeeze(0).to(self.device),
                 'token_type_ids': encoding['token_type_ids'].squeeze(0).to(self.device),
-                'attention_mask': encoding['attention_mask'].squeeze(0).to(self.device)
+                'attention_mask': encoding['attention_mask'].squeeze(0).to(self.device),
             },
-            'g': extra_feature.to(self.device),
-            'y': label
+            'g': extra_feature_tensor,
+            'y': label.to(self.device)
         }
 
 
