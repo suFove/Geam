@@ -4,14 +4,14 @@ import torch
 class Config(object):
     def __init__(self):
         # -------------------此处为必须的配置-------------------
-        self.bert_path = "../BERT/distilbert-base-zh-cased"
+        self.bert_path = "../BERT/ZY-BERT"
         # 如果classificer是None，则默认使用bert模型
-        self.models_name = ['disBert_chinese', 'TextCNN', 'BiGRU_Attention', 'BiLSTM', 'GFN']
+        self.models_name = ['Bert-zy', 'TextCNN', 'BiGRU_Attention', 'BiLSTM', 'GFN']
         self.classifier_model_name = self.models_name[0]
         # 如果fusion是None，则默认不适用融合模型'TGFM'
         self.methods = [None, 'Concat', 'Add', 'TGFM']
-        self.fusion_model_name = self.methods[0]
-        self.dataset_name = 'TCM_CR'
+        self.fusion_model_name = self.methods[3]
+        self.dataset_name = 'TCM_SD'
         # -------------------此处为必须的配置-------------------
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -53,7 +53,7 @@ class Config(object):
         self.training_settings = {
             'batch_size': 32,
             'learning_rate': 5e-5,
-            'num_epochs': 30,
+            'num_epochs': 10,
             'max_seq_len': 256,
             'embedding_dim': self.ge_settings['embedding_dim'],
             # cnn
@@ -63,7 +63,7 @@ class Config(object):
             'hidden_dim': 128,
             'num_layers': 2,
 
-            'early_stopping_patience': 5,
+            'early_stopping_patience': 2,
             'out_dir': f'../result/{self.dataset_name}/{self.classifier_model_name}/{self.fusion_model_name}/'
         }
 

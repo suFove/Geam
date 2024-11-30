@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import pandas as pd
 from tqdm import trange
-from torch_geometric.nn import GCNConv
+# from torch_geometric.nn import GCNConv
 from utils.util4ge import feature_calculator, read_graph, adjacency_opposite_calculator
 import torch.nn.functional as F
 
@@ -231,18 +231,15 @@ class TextGraphFusionModule(nn.Module):
         # channel attention, [b, c, (s*e)] -> [b, c, 1]
         tf_c_att = self.channel_attention(text_features_flattened)
         gf_c_att = self.channel_attention(graph_embeddings_flattened)
-        print('tf_c_att', tf_c_att.shape)
         cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))  # batch不变，后2维交换
-        print('cross_att:', cross_att.shape)
+
         tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
         gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1,2), dim=-1), gf_c_att)
-        print('tf_s_att', tf_cross_weighted.shape)
-        print('gf_s_att', gf_cross_weighted.shape)
+
 
         # Step 3: 空间注意力, [b, c, s, e] -> [b, c, s, e]
         tf_s_att = self.spatial_attention(tf_cross_weighted, c)
         gf_s_att = self.spatial_attention(gf_cross_weighted, c)
-        print(tf_s_att.shape)
         # step 4: 归一化
         norm_tf = torch.softmax(tf_s_att, dim=2)
         norm_gf = torch.softmax(gf_s_att, dim=2)
@@ -506,7 +503,7 @@ class GFN(nn.Module):
             ) for fs in filter_sizes
         ])
         self.fc = nn.Linear(num_filters * len(filter_sizes), num_labels)
-        self.gcn = GCNConv(embed_dim, embed_dim)  # Graph convolution layer from torch_geometric
+        # self.gcn = GCNConv(embed_dim, embed_dim)  # Graph convolution layer from torch_geometric
 
     def forward(self, x, g=None):
         if self.fusion_model is not None and g is not None:
@@ -578,7 +575,7 @@ class ClassifierBERT(torch.nn.Module):
         # Shape: [batch_size, seq_length, embedding_dim]
         bert_emb = self.bert_embedding_layer(**x)  # 将字典传入
         if self.fusion_model is not None and g is not None:
-            bert_emb = self.fusion_layer(bert_emb, g)
+            bert_emb = self.fusion_model(bert_emb, g)
         emd_f = bert_emb[:, 0, :]  # emd_f, 即[CLS] Shape: [batch_size, embedding_dim]
 
         x_pred = self.classifier(emd_f)

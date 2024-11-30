@@ -37,7 +37,8 @@ def train_vec_model(config):
     print(train_data.shape, dev_data.shape, test_data.shape)
     all_tokenized_text = all_data['tokenized_text'].tolist()
     print(type(all_tokenized_text))
-    print(all_tokenized_text[0][0])
+    print(all_tokenized_text[0][0]
+          )
     word2vec_model = train_word_vectors(all_tokenized_text, config.word2vec_settings)
     # word2vec_model = None
     return word2vec_model

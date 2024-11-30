@@ -32,7 +32,7 @@ def run_ml():
 
     train_x, train_y = dataloader2flatten(train_loader)
     dev_x, dev_y = dataloader2flatten(dev_loader)
-    test_x, test_y = dataloader2flatten(dev_loader)
+    test_x, test_y = dataloader2flatten(test_loader)
 
     # 标准化
     scaler = StandardScaler()
