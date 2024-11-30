@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import pandas as pd
 from tqdm import trange
-
+from torch_geometric.nn import GCNConv
 from utils.util4ge import feature_calculator, read_graph, adjacency_opposite_calculator
 import torch.nn.functional as F
 
@@ -492,6 +492,56 @@ class BiGRU(nn.Module):
         # 全连接层操作
         out = self.fc(context_vector)
         return out
+
+
+class GFN(nn.Module):
+    def __init__(self, embed_dim, num_labels, num_filters, filter_sizes, fusion_model=None):
+        super(GFN, self).__init__()
+        self.fusion_model = fusion_model
+        self.convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(1, num_filters, (fs, embed_dim), bias=False),
+                nn.BatchNorm2d(num_filters),
+                nn.ReLU()
+            ) for fs in filter_sizes
+        ])
+        self.fc = nn.Linear(num_filters * len(filter_sizes), num_labels)
+        self.gcn = GCNConv(embed_dim, embed_dim)  # Graph convolution layer from torch_geometric
+
+    def forward(self, x, g=None):
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_model(x, g)
+
+        # Apply Graph Convolution if graph is provided
+        # if g is not None:
+        #     x = self.gcn(x, g)
+
+        x = x.unsqueeze(1)  # Add a dimension and make sure the input is float32
+        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
+        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
+        x = torch.cat(x, 1)  # Concatenate the outputs
+        # Fully connected layer
+        pred_x = self.fc(x)
+        return pred_x
+
+
+class BiLSTM(nn.Module):
+    def __init__(self, embed_dim, hidden_size, num_labels, num_layers, fusion_model=None):
+        super(BiLSTM, self).__init__()
+        self.fusion_model = fusion_model
+        self.lstm = nn.LSTM(embed_dim, hidden_size, num_layers, bidirectional=True, batch_first=True)
+        self.fc = nn.Linear(hidden_size * 2, num_labels)
+
+    def forward(self, x, g=None):
+        if self.fusion_model is not None and g is not None:
+            x = self.fusion_model(x, g)
+
+        # LSTM
+        output, _ = self.lstm(x)
+        # Take the output from the last timestep for classification
+        output = output[:, -1, :]  # [batch_size, hidden_size*2]
+        pred_x = self.fc(output)
+        return pred_x
 
 
 '''

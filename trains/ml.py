@@ -21,7 +21,7 @@ def run_ml():
     eh = EmbeddingHandler(config, word_idx_dict, idx_tensor_dict)
 
     # 2. 创建模型
-    _, feature_fusion_model = get_base_model(config)  # 忽略dl模型
+    # _, feature_fusion_model = get_base_model(config)  # 忽略dl模型
     models = {
         'SVM': SVC(probability=True),
         'DT': DecisionTreeClassifier(),

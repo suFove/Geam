@@ -4,10 +4,10 @@ import torch
 class Config(object):
     def __init__(self):
         # -------------------此处为必须的配置-------------------
-        self.bert_path = "../BERT/chinese_roberta_L-8_H-512"
+        self.bert_path = "../BERT/distilbert-base-zh-cased"
         # 如果classificer是None，则默认使用bert模型
-        self.models_name = ['Bert_medium', 'BiGRU_Attention', 'TextCNN']
-        self.classifier_model_name = self.models_name[2]
+        self.models_name = ['disBert_chinese', 'TextCNN', 'BiGRU_Attention', 'BiLSTM', 'GFN']
+        self.classifier_model_name = self.models_name[0]
         # 如果fusion是None，则默认不适用融合模型'TGFM'
         self.methods = [None, 'Concat', 'Add', 'TGFM']
         self.fusion_model_name = self.methods[0]

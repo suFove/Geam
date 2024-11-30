@@ -76,7 +76,7 @@ def json2csv(srcfname, outfname):
 
 
 def run_pre_data():
-    root_path = '../mydatasets/TCM_CR/'
+    root_path = '../mydatasets/TCM_SD/'
     train_path = root_path + 'train.txt'
     dev_path = root_path + 'dev.txt'
     test_path = root_path + 'test.txt'

@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from config.config import Config
 from trains.models import TextCNN, BiGRU, TextGraphFusionModule, BiGRU_Attention, GraphEmbeddingTrainer, ClassifierBERT, \
-    AddFusionModel, ConcatFusionModel
+    AddFusionModel, ConcatFusionModel, BiLSTM, GFN
 from gensim.models import word2vec, Word2Vec
 from utils.util4ge import word_to_idx, idx_to_tensor
 
@@ -129,11 +129,16 @@ def get_base_model(config):
     if base_model_name == 'TextCNN':
         base_model = TextCNN(embed_dim=embedding_dim, num_labels=num_labels, num_filters=num_filters,
                              filter_sizes=filter_size, fusion_model=fusion_model)
-
+    elif base_model_name == 'GFN':
+        base_model = GFN(embed_dim=embedding_dim, num_labels=num_labels, num_filters=num_filters,
+                         filter_sizes=filter_size, fusion_model=fusion_model)
     elif base_model_name == 'BiGRU':
-        base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers, fusion_model=fusion_model)
+        base_model = BiGRU(embed_dim=embedding_dim, num_labels=num_labels, hidden_dim=hidden_dim, num_layers=num_layers,
+                           fusion_model=fusion_model)
     elif base_model_name == 'BiGRU_Attention':
         base_model = BiGRU_Attention(embedding_dim, hidden_dim, num_labels, num_layers, fusion_model=fusion_model)
+    elif base_model_name == 'BiLSTM':
+        base_model = BiLSTM(embedding_dim, hidden_dim, num_labels, num_layers, fusion_model=fusion_model)
     elif 'Bert' in base_model_name:
         base_model = ClassifierBERT(bert_path, embedding_dim, num_labels, fusion_model=fusion_model)
 
@@ -154,6 +159,7 @@ def dataloader2flatten(loader):
         all_y.extend(y.reshape(y.shape[0], -1))
     return np.array(all_x), np.array(all_y)
 
+
 def compute_metrics(y_true, y_pred):
     # 计算准确率
     acc = accuracy_score(y_true, y_pred)
@@ -167,5 +173,3 @@ def compute_metrics(y_true, y_pred):
         "recall": recall,
         "f1": f1,
     }
-
-
