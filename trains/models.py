@@ -204,7 +204,15 @@ class AddFusionModel(nn.Module):
         x = x + g
         out = self.fusion_layer(x)
         return out
+class Muti_head_Module(nn.Module):
+    def __init__(self, embed_dim, num_heads=1):
+        super(Muti_head_Module, self).__init__()
+        self.attn_layer = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads)
 
+    def forward(self, tf, tf_ehc, gf, gf_ehc):
+        tf_ehc1, _ = self.attn_layer(tf, tf_ehc, tf)
+        out, _ = self.attn_layer(gf, gf_ehc, tf_ehc)
+        return out
 
 class TextGraphFusionModule(nn.Module):
     def __init__(self, ):
@@ -215,7 +223,7 @@ class TextGraphFusionModule(nn.Module):
 
         # padding = kernel_size // 2
         self.spatial_conv = nn.Conv2d(2, 1, kernel_size=7, padding=3)
-
+        self.smam = Muti_head_Module(1024)
     def forward(self, text_feature, graph_feature):
         # step 1: 数据预处理 【batch, channel, seq_len, embedding_dim】，拓展channel维度
         text_feature = text_feature.unsqueeze(1)
@@ -234,8 +242,7 @@ class TextGraphFusionModule(nn.Module):
         cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))  # batch不变，后2维交换
 
         tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
-        gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1,2), dim=-1), gf_c_att)
-
+        gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1, 2), dim=-1), gf_c_att)
 
         # Step 3: 空间注意力, [b, c, s, e] -> [b, c, s, e]
         tf_s_att = self.spatial_attention(tf_cross_weighted, c)
@@ -249,11 +256,64 @@ class TextGraphFusionModule(nn.Module):
         gf_fused = graph_feature + norm_gf * graph_feature
 
         return tf_fused.view(b, s, e) + gf_fused.view(b, s, e)
-
-    '''
-        input [batch_size, channel, (seq_len * embedding_dim)]
-        output [b, c, 1]
-    '''
+        # tf_ehc = (norm_tf * text_feature).view(b, s, e)
+        # gf_ehc = (norm_gf * graph_feature).view(b, s, e)
+        #
+        # tf = text_feature.view(b, s, e)
+        # gf = graph_feature.view(b, s, e)
+        #
+        # out = self.smam(tf, tf_ehc, gf, gf_ehc) + tf_ehc
+        # return out
+#
+# class TextGraphFusionModule(nn.Module):
+#     def __init__(self, ):
+#         super(TextGraphFusionModule, self).__init__()
+#         # 两个卷积层用于处理channel维度上的特征融合
+#         self.avg_conv = nn.Conv2d(1, 1, kernel_size=1, padding=0)
+#         self.max_conv = nn.Conv2d(1, 1, kernel_size=1, padding=0)
+#
+#         # padding = kernel_size // 2
+#         self.spatial_conv = nn.Conv2d(2, 1, kernel_size=7, padding=3)
+#
+#     def forward(self, text_feature, graph_feature):
+#         # step 1: 数据预处理 【batch, channel, seq_len, embedding_dim】，拓展channel维度
+#         text_feature = text_feature.unsqueeze(1)
+#         graph_feature = graph_feature.unsqueeze(1)
+#
+#         # batch, channel, seq_len, embedding_dim
+#         b, c, s, e = text_feature.shape
+#
+#         # Step 2: 计算文本和图嵌入的交叉注意力
+#         text_features_flattened = text_feature.view(b, c, -1)  # [b, c, h*w]
+#         graph_embeddings_flattened = text_feature.view(b, c, -1)
+#
+#         # channel attention, [b, c, (s*e)] -> [b, c, 1]
+#         tf_c_att = self.channel_attention(text_features_flattened)
+#         gf_c_att = self.channel_attention(graph_embeddings_flattened)
+#         cross_att = torch.matmul(tf_c_att, gf_c_att.permute(0, 2, 1))  # batch不变，后2维交换
+#
+#         tf_cross_weighted = torch.matmul(F.softmax(cross_att, dim=-1), tf_c_att)
+#         gf_cross_weighted = torch.matmul(F.softmax(cross_att.transpose(1,2), dim=-1), gf_c_att)
+#
+#
+#         # Step 3: 空间注意力, [b, c, s, e] -> [b, c, s, e]
+#         tf_s_att = self.spatial_attention(tf_cross_weighted, c)
+#         gf_s_att = self.spatial_attention(gf_cross_weighted, c)
+#         # step 4: 归一化
+#         norm_tf = torch.softmax(tf_s_att, dim=2)
+#         norm_gf = torch.softmax(gf_s_att, dim=2)
+#
+#         # Step 4: 特征融合
+#         tf_fused = text_feature + norm_tf * text_feature
+#         gf_fused = graph_feature + norm_gf * graph_feature
+#
+#         # return tf_fused.view(b, s, e) + gf_fused.view(b, s, e)
+#         return tf_fused.view(b, s, e)
+#
+#     '''
+#         input [batch_size, channel, (seq_len * embedding_dim)]
+#         output [b, c, 1]
+#     '''
 
     def channel_attention(self, input_features):
         # 求 avg & max

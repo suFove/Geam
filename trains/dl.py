@@ -29,7 +29,8 @@ def word_to_feature(config, train_data, dev_data, test_data, word2vec_model, eh:
                                                                         'embedding_dim']))
     # graph embedding
     train_g = train_data['tokenized_text'].apply(lambda x: eh.map_text_to_tensors(eval(x)))
-
+    # train_g = train_data['tokenized_text'].apply(lambda x: eh.map_text_to_tensors(eval(x))).tolist()
+    # train_g = None
     return (train_x.tolist(), train_data['label'].tolist(),
             dev_x.tolist(), dev_data['label'].tolist(),
             test_x.tolist(), test_data['label'].tolist(),

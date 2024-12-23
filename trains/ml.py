@@ -39,7 +39,7 @@ def run_ml():
     train_x = scaler.fit_transform(train_x)
     dev_x = scaler.transform(dev_x)
     test_x = scaler.transform(test_x)
-
+    print("training...")
     for model_name, model in models.items():
         model.fit(train_x, np.ravel(train_y))
         metrics_dev_report = compute_metrics(dev_y, model.predict(dev_x))
